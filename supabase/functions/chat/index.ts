@@ -58,7 +58,8 @@ async function gemini(path: string, body: unknown) {
     });
     const data = await r.json().catch(() => ({}));
     if (r.ok) return data;
-    if (attempt < 3 && [429, 500, 503].includes(r.status)) {
+    const perDay = /per day/i.test(String(data?.error?.message ?? ""));  // 每日額度用完：重試也沒用，直接回報
+    if (attempt < 3 && [429, 500, 503].includes(r.status) && !perDay) {
       // 429 = 免費額度用完：依 Gemini 建議的秒數等待（最多 62 秒）
       const hint = Number(String(data?.error?.message ?? "").match(/retry in ([\d.]+)s/)?.[1] ?? 0);
       const wait = r.status === 429 && hint ? Math.min(hint + 1, 62) : 2 ** attempt;
