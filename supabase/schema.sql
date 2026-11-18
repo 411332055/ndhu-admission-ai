@@ -49,3 +49,29 @@ $$;
 
 revoke execute on function public.match_chunks(extensions.vector, int, float) from public, anon, authenticated;
 grant execute on function public.match_chunks(extensions.vector, int, float) to service_role;
+
+-- 備援檢索：向量額度用完時，用「中文雙字詞」重疊比例找相關段落（後端平常也會和向量結果合併）
+create or replace function public.match_chunks_text(q text, match_count int default 4)
+returns table (id bigint, source text, content text, similarity float)
+language sql stable
+set search_path = public
+as $$
+  with grams as (
+    select distinct substr(q, i, 2) as g
+    from generate_series(1, greatest(char_length(q) - 1, 1)) as i
+    where substr(q, i, 2) !~ '[[:space:][:punct:]？，。、！：；「」（）]'
+      and substr(q, i, 2) not in ('什麼','怎麼','可以','要在','是否','請問','我要','如何','的時','時候')
+  ),
+  total as (select greatest(count(*), 1)::float as n from grams),
+  scored as (
+    select c.id, c.source, c.content,
+           (select count(*) from grams where strpos(c.content, grams.g) > 0)::float / (select n from total) as s
+    from public.kb_chunks c
+  )
+  select id, source, content, s from scored
+  where s >= 0.35
+  order by s desc, id
+  limit match_count;
+$$;
+revoke execute on function public.match_chunks_text(text, int) from public, anon, authenticated;
+grant execute on function public.match_chunks_text(text, int) to service_role;

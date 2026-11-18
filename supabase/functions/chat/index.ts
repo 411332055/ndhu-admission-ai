@@ -115,11 +115,23 @@ async function chat(question: string, history: { role: string; content: string }
   question = String(question ?? "").trim().slice(0, 500);
   if (!question) return json({ error: "請輸入問題" }, 400);
 
-  const [qv] = await embed([question], "RETRIEVAL_QUERY");
-  const { data: hits, error } = await sb.rpc("match_chunks", {
-    query_embedding: qv, match_count: TOP_K, min_similarity: MIN_SIM,
-  });
-  if (error) throw error;
+  // 混合檢索：向量（語意）＋ 關鍵字（雙字詞重疊）。向量額度用完時只用關鍵字，系統照常回答。
+  let hits: any[] = [];
+  try {
+    const [qv] = await embed([question], "RETRIEVAL_QUERY");
+    const { data, error } = await sb.rpc("match_chunks", {
+      query_embedding: qv, match_count: TOP_K, min_similarity: MIN_SIM,
+    });
+    if (error) throw error;
+    hits = data ?? [];
+  } catch (e) {
+    console.error("vector search failed, keyword only:", e);
+  }
+  const { data: kw } = await sb.rpc("match_chunks_text", { q: question, match_count: TOP_K });
+  for (const k of kw ?? []) {
+    if (hits.length >= TOP_K + 2) break;
+    if (!hits.some((h) => h.id === k.id)) hits.push(k);
+  }
 
   let answer: string;
   const sources = [...new Set((hits ?? []).map((h: any) => h.source))] as string[];
