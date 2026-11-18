@@ -2,6 +2,7 @@
 // 動作：
 //   chat   { question, history? }                → RAG 問答（公開）
 //   ingest { admin_key, source, text }           → 新增知識（管理員）
+//   ingest_url { admin_key, url, source }        → 從網址下載 PDF / 網頁並加入知識（管理員）
 //   list   { admin_key }                         → 列出知識來源（管理員）
 //   delete { admin_key, source }                 → 刪除某個來源（管理員）
 //   stats  { admin_key }                         → 最近問答與知識缺口（管理員）
@@ -151,6 +152,56 @@ async function ingest(source: string, text: string) {
   return json({ ok: true, source, chunks: chunks.length });
 }
 
+function htmlToText(html: string) {
+  const main = html.match(/<main[\s\S]*?<\/main>/i)?.[0]
+    ?? html.match(/<article[\s\S]*?<\/article>/i)?.[0] ?? html;
+  return main
+    .replace(/<(script|style|noscript|nav|header|footer)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<a\s[^>]*href="([^"]+\.pdf)"[^>]*>([\s\S]*?)<\/a>/gi, "$2（附件：$1）")
+    .replace(/<(br|\/p|\/div|\/li|\/tr|\/h\d)[^>]*>/gi, "\n")
+    .replace(/<\/t[dh]>/gi, " | ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim();
+}
+
+function toBase64(buf: Uint8Array) {
+  let s = "";
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+async function ingestUrl(url: string, source: string) {
+  url = String(url ?? "").trim();
+  if (!/^https?:\/\//i.test(url)) return json({ error: "請輸入 http(s) 開頭的網址" }, 400);
+  const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (NDHU-KM-course-project)" } });
+  if (!r.ok) return json({ error: `下載失敗：HTTP ${r.status}` }, 400);
+  const type = r.headers.get("content-type") ?? "";
+  const buf = new Uint8Array(await r.arrayBuffer());
+  let text: string;
+  let truncated = false;
+  if (type.includes("pdf") || /\.pdf($|\?)/i.test(url)) {
+    if (buf.length > 18 * 1024 * 1024) return json({ error: "PDF 超過 18MB，請改用較小的檔案" }, 400);
+    const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
+      contents: [{ role: "user", parts: [
+        { inlineData: { mimeType: "application/pdf", data: toBase64(buf) } },
+        { text: "請把這份文件的內容完整轉成純文字（繁體中文照原文）。規則：逐字保留所有日期、時間、金額、名額、電話、網址與單位名稱；表格每一列寫成一行，欄位用「 | 」分隔；不要摘要、不要省略、不要加入任何說明或評論；頁首頁尾與頁碼可省略。" },
+      ] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 32768 },
+    });
+    text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+    truncated = data?.candidates?.[0]?.finishReason === "MAX_TOKENS";
+  } else {
+    text = htmlToText(new TextDecoder("utf-8").decode(buf));
+  }
+  if (text.trim().length < 20) return json({ error: "讀不到文字內容" }, 400);
+  text = `（原始網址：${url}）\n` + text;
+  const res = await ingest(source, text);
+  const body = await res.json();
+  return json({ ...body, truncated, chars: text.length }, res.status);
+}
+
 async function list() {
   const { data, error } = await sb.from("kb_chunks").select("source, created_at");
   if (error) throw error;
@@ -185,6 +236,7 @@ Deno.serve(async (req) => {
 
     if (!ADMIN_KEY || body.admin_key !== ADMIN_KEY) return json({ error: "管理密碼錯誤" }, 401);
     if (action === "ingest") return await ingest(body.source, body.text);
+    if (action === "ingest_url") return await ingestUrl(body.url, body.source);
     if (action === "list") return await list();
     if (action === "stats") return await stats();
     if (action === "delete") {

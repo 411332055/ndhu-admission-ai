@@ -39,6 +39,16 @@
     </section>
 
     <section class="panel">
+      <h2>從網址匯入（學校公告、PDF）</h2>
+      <label>網址（PDF 或網頁，一行一個；可在網址後面加「 | 來源名稱」）</label>
+      <textarea id="urls" style="min-height:90px" placeholder="https://aa.ndhu.edu.tw/....pdf | 115學年度新生註冊須知"></textarea>
+      <div class="row">
+        <button class="primary" id="importUrls">匯入</button>
+        <span class="status" id="urlStatus">PDF 由 Gemini 轉成文字，每份約 10～60 秒</span>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>知識來源 <button class="ghost" id="refresh" style="float:right">重新整理</button></h2>
       <table><thead><tr><th>來源</th><th>段數</th><th>更新時間</th><th></th></tr></thead>
         <tbody id="srcList"><tr><td colspan="4" class="status">請先登入</td></tr></tbody></table>
@@ -139,7 +149,27 @@ async function upload() {
   finally { $('upload').disabled = false; }
 }
 
+async function importUrls() {
+  const lines = $('urls').value.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return status('urlStatus', '請貼上至少一個網址', 'err');
+  $('importUrls').disabled = true;
+  const done = [], failed = [];
+  for (const [i, line] of lines.entries()) {
+    const [url, name] = line.split('|').map(s => s.trim());
+    const source = name || decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, '') || url;
+    status('urlStatus', `匯入中 ${i + 1}/${lines.length}：${source}…`);
+    try {
+      const r = await api({ action: 'ingest_url', url, source });
+      done.push(`${r.source}（${r.chunks} 段${r.truncated ? '，內容太長只匯入前段' : ''}）`);
+    } catch (e) { failed.push(`${source}：${e.message}`); }
+  }
+  status('urlStatus', `完成 ${done.length} 份${failed.length ? `，失敗 ${failed.length} 份：${failed.join('；')}` : ''}`, failed.length ? 'err' : 'ok');
+  $('importUrls').disabled = false;
+  loadSources();
+}
+
 $('login').onclick = login;
+$('importUrls').onclick = importUrls;
 $('key').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('upload').onclick = upload;
 $('refresh').onclick = () => { loadSources(); loadStats(); };
