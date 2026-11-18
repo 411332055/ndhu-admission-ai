@@ -51,6 +51,8 @@ function md(text) {
   let html = '', list = null;
   for (const raw of lines) {
     const line = raw.trim();
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    if (h) { if (list) { html += `</${list}>`; list = null; } html += `<p><strong>${h[1]}</strong></p>`; continue; }
     const ul = line.match(/^[-*•]\s+(.*)/), ol = line.match(/^\d+[.、)]\s*(.*)/);
     const type = ul ? 'ul' : ol ? 'ol' : null;
     if (type) {
