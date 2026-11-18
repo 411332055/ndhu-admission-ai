@@ -48,14 +48,21 @@ function json(body: unknown, status = 200) {
 }
 
 async function gemini(path: string, body: unknown) {
-  const r = await fetch(`${API}/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-    body: JSON.stringify(body),
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(`Gemini ${r.status}: ${data?.error?.message ?? JSON.stringify(data)}`);
-  return data;
+  // Gemini 忙碌（429 / 500 / 503）時自動重試：等 1、2、4 秒
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(`${API}/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) return data;
+    if (attempt < 3 && [429, 500, 503].includes(r.status)) {
+      await new Promise((res) => setTimeout(res, 1000 * 2 ** attempt));
+      continue;
+    }
+    throw new Error(`Gemini ${r.status}: ${data?.error?.message ?? JSON.stringify(data)}`);
+  }
 }
 
 function normalize(v: number[]) {
