@@ -176,7 +176,12 @@ async function importUrls() {
     try {
       let r;
       try { r = await api({ action: 'ingest_url', url, source }); }
-      catch (e) { if (!String(e.message).includes('超過 18MB')) throw e; r = await bigPdf(url, source, i, lines.length); }
+      catch (e) {
+        // PDF 太大或一次轉太久（逾時）→ 改用分段匯入；下載失敗、密碼錯誤則直接回報
+        const msg = String(e.message);
+        if (!/\.pdf($|\?)/i.test(url) || /下載失敗|管理密碼/.test(msg)) throw e;
+        r = await bigPdf(url, source, i, lines.length);
+      }
       done.push(`${r.source}（${r.chunks} 段${r.truncated ? '，內容太長只匯入前段' : ''}）`);
     } catch (e) { failed.push(`${source}：${e.message}`); }
   }
