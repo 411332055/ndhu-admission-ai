@@ -20,8 +20,8 @@ const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
 const TOP_K = 4;
 const MIN_SIM = Number(Deno.env.get("MIN_SIMILARITY") ?? "0.5");
-const CHUNK_SIZE = 400;
-const OVERLAP = 80;
+const CHUNK_SIZE = 700;   // 每段字數（免費版向量額度每分鐘 100 次，段落大一點比較不會超過）
+const OVERLAP = 100;
 const API = "https://generativelanguage.googleapis.com/v1beta";
 
 const sb = createClient(
@@ -59,7 +59,10 @@ async function gemini(path: string, body: unknown) {
     const data = await r.json().catch(() => ({}));
     if (r.ok) return data;
     if (attempt < 3 && [429, 500, 503].includes(r.status)) {
-      await new Promise((res) => setTimeout(res, 1000 * 2 ** attempt));
+      // 429 = 免費額度用完：依 Gemini 建議的秒數等待（最多 62 秒）
+      const hint = Number(String(data?.error?.message ?? "").match(/retry in ([\d.]+)s/)?.[1] ?? 0);
+      const wait = r.status === 429 && hint ? Math.min(hint + 1, 62) : 2 ** attempt;
+      await new Promise((res) => setTimeout(res, wait * 1000));
       continue;
     }
     throw new Error(`Gemini ${r.status}: ${data?.error?.message ?? JSON.stringify(data)}`);
