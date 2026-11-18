@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知識庫管理｜東華大學入學行政 AI 助理</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="links"><a href="index.html">← 回到問答</a></span>
+    <h1>📚 知識庫管理</h1>
+    <p>新增、更新、刪除入學行政知識；查看使用者問了什麼、哪些問題答不出來</p>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>管理密碼</h2>
+      <div class="row">
+        <input type="password" id="key" placeholder="輸入 ADMIN_KEY" style="flex:1">
+        <button class="primary" id="login">登入</button>
+      </div>
+      <div class="status" id="loginStatus"></div>
+    </section>
+
+    <section class="panel">
+      <h2>新增 / 更新知識</h2>
+      <label>上傳檔案（.txt .md .pdf .docx，可多選；檔名會當作來源名稱）</label>
+      <input type="file" id="files" multiple accept=".txt,.md,.pdf,.docx">
+      <label>或直接貼上文字</label>
+      <input type="text" id="source" placeholder="來源名稱，例如：115學年度申請入學簡章">
+      <textarea id="text" placeholder="貼上入學規定、FAQ、公告內容……"></textarea>
+      <div class="row">
+        <button class="primary" id="upload">上傳到知識庫</button>
+        <span class="status" id="upStatus">同名來源會自動覆蓋（等於更新）</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>知識來源 <button class="ghost" id="refresh" style="float:right">重新整理</button></h2>
+      <table><thead><tr><th>來源</th><th>段數</th><th>更新時間</th><th></th></tr></thead>
+        <tbody id="srcList"><tr><td colspan="4" class="status">請先登入</td></tr></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>問答紀錄與知識缺口</h2>
+      <div class="status" id="statSummary">請先登入</div>
+      <table><thead><tr><th>問題</th><th>狀態</th><th>時間</th></tr></thead>
+        <tbody id="logList"></tbody></table>
+    </section>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script>
+const URL_ = window.APP_CONFIG.FUNCTION_URL;
+const $ = id => document.getElementById(id);
+let KEY = '';
+try { KEY = sessionStorage.getItem('admin_key') || ''; $('key').value = KEY; } catch {}
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = t => new Date(t).toLocaleString('zh-TW', { hour12: false });
+function status(el, msg, cls = '') { $(el).className = 'status ' + cls; $(el).textContent = msg; }
+
+async function api(body) {
+  const r = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, admin_key: KEY }) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+
+async function loadSources() {
+  const { sources } = await api({ action: 'list' });
+  $('srcList').innerHTML = sources.length ? sources.sort((a, b) => b.updated.localeCompare(a.updated)).map(s =>
+    `<tr><td>${esc(s.source)}</td><td>${s.chunks}</td><td>${fmt(s.updated)}</td>
+     <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`).join('')
+    : '<tr><td colspan="4" class="status">知識庫目前是空的</td></tr>';
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm(`確定刪除「${b.dataset.del}」？`)) return;
+    await api({ action: 'delete', source: b.dataset.del }); loadSources();
+  });
+}
+
+async function loadStats() {
+  const d = await api({ action: 'stats' });
+  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則知識庫找不到資料（＝需要補充的知識缺口）`);
+  $('logList').innerHTML = d.recent.map(r =>
+    `<tr><td>${esc(r.question)}</td><td><span class="tag ${r.answered ? 'ok' : ''}">${r.answered ? '已回答' : '知識缺口'}</span></td>
+     <td>${fmt(r.created_at)}</td></tr>`).join('');
+}
+
+async function login() {
+  KEY = $('key').value.trim();
+  try { sessionStorage.setItem('admin_key', KEY); } catch {}
+  try { await loadSources(); await loadStats(); status('loginStatus', '已登入', 'ok'); }
+  catch (e) { status('loginStatus', e.message, 'err'); }
+}
+
+async function readFile(f) {
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (ext === 'pdf') {
+    const pdf = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
+    let out = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const c = await (await pdf.getPage(i)).getTextContent();
+      out += c.items.map(it => it.str + (it.hasEOL ? '\n' : '')).join('') + '\n';
+    }
+    return out;
+  }
+  if (ext === 'docx') return (await mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() })).value;
+  return await f.text();
+}
+
+async function upload() {
+  $('upload').disabled = true;
+  try {
+    const jobs = [];
+    for (const f of $('files').files) jobs.push({ source: f.name.replace(/\.[^.]+$/, ''), file: f });
+    if ($('text').value.trim()) {
+      if (!$('source').value.trim()) throw new Error('貼上文字時請填來源名稱');
+      jobs.push({ source: $('source').value.trim(), text: $('text').value });
+    }
+    if (!jobs.length) throw new Error('請選檔案或貼上文字');
+    for (const [i, j] of jobs.entries()) {
+      status('upStatus', `處理中 ${i + 1}/${jobs.length}：${j.source}…`);
+      const text = j.text ?? await readFile(j.file);
+      if (!text.trim()) throw new Error(`「${j.source}」讀不到文字（可能是掃描檔）`);
+      const r = await api({ action: 'ingest', source: j.source, text });
+      status('upStatus', `「${r.source}」已加入，共 ${r.chunks} 段`, 'ok');
+    }
+    $('files').value = ''; $('text').value = ''; $('source').value = '';
+    loadSources();
+  } catch (e) { status('upStatus', e.message, 'err'); }
+  finally { $('upload').disabled = false; }
+}
+
+$('login').onclick = login;
+$('key').onkeydown = e => { if (e.key === 'Enter') login(); };
+$('upload').onclick = upload;
+$('refresh').onclick = () => { loadSources(); loadStats(); };
+if (KEY) login();
+</script>
+</body>
+</html>

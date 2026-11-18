@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>東華大學入學行政 AI 助理</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="links"><a href="admin.html">知識庫管理</a></span>
+    <h1>🎓 東華大學入學行政 AI 助理</h1>
+    <p>第十組｜創新與知識管理　·　回答依據入學行政知識庫</p>
+  </header>
+
+  <main id="chat">
+    <div class="welcome" id="welcome">
+      <h2>有什麼入學問題想問？</h2>
+      <div>申請入學、報到、註冊繳費……都可以問我</div>
+      <div class="chips">
+        <button class="chip">申請入學有幾個階段？</button>
+        <button class="chip">新生報到要準備什麼？</button>
+        <button class="chip">學雜費可以怎麼繳？</button>
+      </div>
+    </div>
+  </main>
+
+  <form class="ask" id="form">
+    <textarea id="q" rows="1" placeholder="輸入你的問題，Enter 送出，Shift+Enter 換行" required></textarea>
+    <button class="primary" id="send" type="submit">送出</button>
+  </form>
+  <footer>AI 回答僅供參考，正式規定請以東華大學教務處招生組公告為準。</footer>
+</div>
+
+<script src="config.js"></script>
+<script>
+const URL_ = window.APP_CONFIG.FUNCTION_URL;
+const chat = document.getElementById('chat');
+const form = document.getElementById('form');
+const q = document.getElementById('q');
+const send = document.getElementById('send');
+const history = [];
+
+function esc(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// 簡單的 Markdown：粗體、條列、段落
+function md(text) {
+  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').split('\n');
+  let html = '', list = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    const ul = line.match(/^[-*•]\s+(.*)/), ol = line.match(/^\d+[.、)]\s*(.*)/);
+    const type = ul ? 'ul' : ol ? 'ol' : null;
+    if (type) {
+      if (list !== type) { if (list) html += `</${list}>`; html += `<${type}>`; list = type; }
+      html += `<li>${(ul || ol)[1]}</li>`;
+    } else {
+      if (list) { html += `</${list}>`; list = null; }
+      if (line) html += `<p>${line}</p>`;
+    }
+  }
+  if (list) html += `</${list}>`;
+  return html;
+}
+
+function add(role, html) {
+  document.getElementById('welcome')?.remove();
+  const row = document.createElement('div');
+  row.className = 'msg ' + role;
+  row.innerHTML = `<div class="bubble">${html}</div>`;
+  chat.appendChild(row);
+  row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  return row.firstChild;
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question) return;
+  add('user', esc(question));
+  const bubble = add('bot', '<span class="typing"><span></span><span></span><span></span></span>');
+  send.disabled = true;
+  try {
+    const r = await fetch(URL_, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'chat', question, history: history.slice(-4) }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.status);
+    let html = md(data.answer);
+    if (data.sources?.length) html += `<div class="sources">📄 資料來源：${data.sources.map(esc).join('、')}</div>`;
+    bubble.innerHTML = html;
+    history.push({ role: 'user', content: question }, { role: 'assistant', content: data.answer });
+  } catch (e) {
+    bubble.innerHTML = `<span style="color:#b3261e">連線失敗：${esc(String(e.message || e))}，請稍後再試。</span>`;
+  } finally {
+    send.disabled = false;
+    bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+}
+
+form.addEventListener('submit', e => { e.preventDefault(); const v = q.value; q.value = ''; q.style.height = ''; ask(v); });
+q.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+});
+q.addEventListener('input', () => { q.style.height = 'auto'; q.style.height = q.scrollHeight + 'px'; });
+document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+</script>
+</body>
+</html>
