@@ -3,7 +3,8 @@
 //   chat   { question, history? }                → RAG 問答（公開）
 //   ingest { admin_key, source, text }           → 新增知識（管理員）
 //   ingest_url { admin_key, url, source }        → 從網址下載 PDF / 網頁並加入知識（管理員）
-//   list   { admin_key }                         → 列出知識來源（管理員）
+//   pdf_prepare / pdf_part                       → 大型 PDF 分段匯入（管理員）
+//   list   { admin_key }                       → 列出知識來源（管理員）
 //   delete { admin_key, source }                 → 刪除某個來源（管理員）
 //   stats  { admin_key }                         → 最近問答與知識缺口（管理員）
 //
@@ -145,14 +146,14 @@ async function chat(question: string, history: { role: string; content: string }
   return json({ answer, sources, top_score: top });
 }
 
-async function ingest(source: string, text: string) {
+async function ingest(source: string, text: string, append = false) {
   source = String(source ?? "").trim().slice(0, 200);
   text = String(text ?? "");
   if (!source || !text.trim()) return json({ error: "需要 source 與 text" }, 400);
   const chunks = splitText(text);
   if (chunks.length > 500) return json({ error: "內容太長，請分成多份上傳" }, 400);
   const vecs = await embed(chunks, "RETRIEVAL_DOCUMENT");
-  await sb.from("kb_chunks").delete().eq("source", source); // 同名來源先刪除再寫入（更新）
+  if (!append) await sb.from("kb_chunks").delete().eq("source", source); // 同名來源先刪除再寫入（更新）
   const rows = chunks.map((content, i) => ({ source, content, embedding: vecs[i] }));
   const { error } = await sb.from("kb_chunks").insert(rows);
   if (error) throw error;
@@ -189,7 +190,7 @@ async function ingestUrl(url: string, source: string) {
   let text: string;
   let truncated = false;
   if (type.includes("pdf") || /\.pdf($|\?)/i.test(url)) {
-    if (buf.length > 18 * 1024 * 1024) return json({ error: "PDF 超過 18MB，請改用較小的檔案" }, 400);
+    if (buf.length > 18 * 1024 * 1024) return json({ error: "PDF 超過 18MB", tooLarge: true }, 413);
     const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
       contents: [{ role: "user", parts: [
         { inlineData: { mimeType: "application/pdf", data: toBase64(buf) } },
@@ -207,6 +208,57 @@ async function ingestUrl(url: string, source: string) {
   const res = await ingest(source, text);
   const body = await res.json();
   return json({ ...body, truncated, chars: text.length }, res.status);
+}
+
+// 大型 PDF（> 18MB）：先上傳到 Gemini Files API，再分段（依頁碼）轉成文字
+async function pdfPrepare(url: string) {
+  url = String(url ?? "").trim();
+  const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (NDHU-KM-course-project)" } });
+  if (!r.ok) return json({ error: `下載失敗：HTTP ${r.status}` }, 400);
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const start = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files`, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": GEMINI_KEY,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(buf.length),
+      "X-Goog-Upload-Header-Content-Type": "application/pdf",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ file: { display_name: url.split("/").pop() } }),
+  });
+  const uploadUrl = start.headers.get("x-goog-upload-url");
+  if (!uploadUrl) return json({ error: `Gemini 檔案上傳失敗：HTTP ${start.status}` }, 500);
+  const up = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize" },
+    body: buf,
+  });
+  const info = await up.json();
+  let file = info.file;
+  for (let i = 0; i < 20 && file?.state === "PROCESSING"; i++) {
+    await new Promise((res) => setTimeout(res, 3000));
+    const g = await fetch(`${API}/${file.name}`, { headers: { "x-goog-api-key": GEMINI_KEY } });
+    file = await g.json();
+  }
+  if (!file?.uri || file.state === "FAILED") return json({ error: "Gemini 檔案處理失敗" }, 500);
+  return json({ fileUri: file.uri, sizeMB: +(buf.length / 1048576).toFixed(1) });
+}
+
+async function pdfPart(fileUri: string, source: string, url: string, from: number, to: number) {
+  const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
+    contents: [{ role: "user", parts: [
+      { fileData: { mimeType: "application/pdf", fileUri } },
+      { text: `只轉錄這份 PDF 的第 ${from} 頁到第 ${to} 頁（以 PDF 實際頁序計算，不是頁面上印的頁碼）。如果這些頁不存在，只輸出「（無此頁）」。規則：繁體中文照原文，逐字保留所有日期、時間、金額、名額、電話、網址與單位名稱；表格每一列寫成一行，欄位用「 | 」分隔；圖片中的文字也要轉錄；不要摘要、不要省略、不要加入說明。` },
+    ] }],
+    generationConfig: { temperature: 0, maxOutputTokens: 32768 },
+  });
+  const text = (data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "").trim();
+  if (text.length < 30 || text.includes("（無此頁）")) return json({ ok: true, empty: true, chunks: 0 });
+  const res = await ingest(source, `（原始網址：${url}，第 ${from}-${to} 頁）\n` + text, from > 1);
+  const body = await res.json();
+  return json({ ...body, empty: false, truncated: data?.candidates?.[0]?.finishReason === "MAX_TOKENS" }, res.status);
 }
 
 async function list() {
@@ -244,6 +296,8 @@ Deno.serve(async (req) => {
     if (!ADMIN_KEY || body.admin_key !== ADMIN_KEY) return json({ error: "管理密碼錯誤" }, 401);
     if (action === "ingest") return await ingest(body.source, body.text);
     if (action === "ingest_url") return await ingestUrl(body.url, body.source);
+    if (action === "pdf_prepare") return await pdfPrepare(body.url);
+    if (action === "pdf_part") return await pdfPart(body.fileUri, body.source, body.url, Number(body.from), Number(body.to));
     if (action === "list") return await list();
     if (action === "stats") return await stats();
     if (action === "delete") {

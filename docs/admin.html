@@ -149,6 +149,21 @@ async function upload() {
   finally { $('upload').disabled = false; }
 }
 
+// 大型 PDF：先上傳到 Gemini，再每 10 頁轉一次文字，直到沒有下一頁
+async function bigPdf(url, source, i, n) {
+  status('urlStatus', `匯入中 ${i + 1}/${n}：${source}（大型 PDF，上傳中…）`);
+  const { fileUri } = await api({ action: 'pdf_prepare', url });
+  let chunks = 0, truncated = false;
+  for (let from = 1; from <= 300; from += 10) {
+    status('urlStatus', `匯入中 ${i + 1}/${n}：${source}（第 ${from}-${from + 9} 頁…）`);
+    const r = await api({ action: 'pdf_part', fileUri, url, source, from, to: from + 9 });
+    if (r.empty) break;
+    chunks += r.chunks; truncated = truncated || r.truncated;
+  }
+  if (!chunks) throw new Error('讀不到內容');
+  return { source, chunks, truncated };
+}
+
 async function importUrls() {
   const lines = $('urls').value.split('\n').map(l => l.trim()).filter(Boolean);
   if (!lines.length) return status('urlStatus', '請貼上至少一個網址', 'err');
@@ -159,7 +174,9 @@ async function importUrls() {
     const source = name || decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, '') || url;
     status('urlStatus', `匯入中 ${i + 1}/${lines.length}：${source}…`);
     try {
-      const r = await api({ action: 'ingest_url', url, source });
+      let r;
+      try { r = await api({ action: 'ingest_url', url, source }); }
+      catch (e) { if (!String(e.message).includes('超過 18MB')) throw e; r = await bigPdf(url, source, i, lines.length); }
       done.push(`${r.source}（${r.chunks} 段${r.truncated ? '，內容太長只匯入前段' : ''}）`);
     } catch (e) { failed.push(`${source}：${e.message}`); }
   }
