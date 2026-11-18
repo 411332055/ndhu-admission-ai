@@ -7,13 +7,13 @@
 //   stats  { admin_key }                         → 最近問答與知識缺口（管理員）
 //
 // 需要的 Secrets：GEMINI_API_KEY、ADMIN_KEY
-// 選用：GEMINI_MODEL（預設 gemini-3.5-flash）、EMBED_MODEL（預設 gemini-embedding-001）
+// 選用：GEMINI_MODEL（預設 gemini-3.1-flash-lite）、EMBED_MODEL（預設 gemini-embedding-001）
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const ADMIN_KEY = Deno.env.get("ADMIN_KEY") ?? "";
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";
+const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
 const TOP_K = 4;
