@@ -277,6 +277,40 @@ async function pdfPart(fileUri: string, source: string, url: string, from: numbe
   return json({ ...body, empty: false, truncated: data?.candidates?.[0]?.finishReason === "MAX_TOKENS" }, res.status);
 }
 
+// 排程匯入：每次呼叫只處理一小步（下載上傳，或 10 頁），由 pg_cron 定時觸發。
+// 只處理資料庫 import_queue 裡已排好的網址，不接受外部傳入網址，所以不需要管理密碼。
+async function processQueue() {
+  const { data: items } = await sb.from("import_queue").select("*")
+    .in("status", ["pending", "parts"]).order("id").limit(1);
+  const it = items?.[0];
+  if (!it) return json({ ok: true, idle: true });
+  if (it.locked_at && Date.now() - Date.parse(it.locked_at) < 170_000) return json({ ok: true, busy: true });
+  await sb.from("import_queue").update({ locked_at: new Date().toISOString() }).eq("id", it.id);
+  const save = (patch: Record<string, unknown>) =>
+    sb.from("import_queue").update({ ...patch, locked_at: null, updated_at: new Date().toISOString() }).eq("id", it.id);
+  try {
+    if (it.status === "pending") {
+      const res = await pdfPrepare(it.url);
+      const body = await res.json();
+      if (!res.ok) { await save({ status: "error", error: body.error }); return json(body, 500); }
+      await save({ status: "parts", file_uri: body.fileUri, next_from: 1 });
+      return json({ ok: true, step: "uploaded", id: it.id });
+    }
+    const from = it.next_from;
+    const res = await pdfPart(it.file_uri, it.source, it.url, from, from + 9);
+    const body = await res.json();
+    if (!res.ok) { await save({ error: body.error }); return json(body, 500); }
+    if (body.empty || from > 300) { await save({ status: "done", error: null }); return json({ ok: true, done: it.source }); }
+    await save({ next_from: from + 10, chunks: it.chunks + (body.chunks ?? 0), error: null });
+    return json({ ok: true, step: `pages ${from}-${from + 9}`, chunks: body.chunks });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // 額度不足：保留進度，下次排程再試；其他錯誤記錄下來
+    await save(/429/.test(msg) ? { error: msg.slice(0, 300) } : { status: "error", error: msg.slice(0, 300) });
+    return json({ error: msg }, 500);
+  }
+}
+
 async function list() {
   const { data, error } = await sb.from("kb_chunks").select("source, created_at");
   if (error) throw error;
@@ -308,6 +342,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = body.action ?? "chat";
     if (action === "chat") return await chat(body.question, body.history);
+    if (action === "process_queue") return await processQueue();
 
     if (!ADMIN_KEY || body.admin_key !== ADMIN_KEY) return json({ error: "管理密碼錯誤" }, 401);
     if (action === "ingest") return await ingest(body.source, body.text);
