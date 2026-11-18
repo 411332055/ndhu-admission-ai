@@ -36,7 +36,7 @@ const CORS = {
 const SYSTEM = `你是國立東華大學入學行政 AI 助理。
 規則：
 1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
-2. 參考資料沒有的內容，回答「目前知識庫沒有相關資訊，建議洽詢東華大學教務處招生組」，不要自行編造。
+2. 參考資料沒有的內容，回答「目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）」，不要自行編造。
 3. 日期、名額、金額等數字必須和參考資料完全一致。`;
 
 function json(body: unknown, status = 200) {
@@ -114,7 +114,7 @@ async function chat(question: string, history: { role: string; content: string }
   const top = hits?.[0]?.similarity ?? null;
 
   if (!hits?.length) {
-    answer = "目前知識庫沒有相關資訊，建議洽詢東華大學教務處招生組。";
+    answer = "目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）。";
   } else {
     const ctx = hits.map((h: any, i: number) => `[${i + 1}]（${h.source}）${h.content}`).join("\n\n");
     const contents = history.slice(-4).map((m) => ({
