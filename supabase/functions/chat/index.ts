@@ -44,10 +44,16 @@ const SYSTEM = `你是國立東華大學入學行政 AI 助理。
    【完整】參考資料足以完整回答問題
    【部分】只能回答一部分，問題中有細節（例如具體標準、分數、日期）參考資料沒有
    【無資料】參考資料完全無法回答
-   這個標記只用來統計，使用者看不到。`;
+   標記必須含【】括號，例如最後一行只寫：【完整】。這個標記只用來統計，使用者看不到。`;
 
 const STATUS_TAG = /\s*[【\[]\s*(完整|部分|無資料)\s*[】\]]\s*$/;
 const NO_INFO = /目前知識庫沒有相關資訊/;
+// AI 偶爾把標記寫成說明文字，也要認得並移除
+const STATUS_TEXT: [RegExp, "full" | "partial" | "none"][] = [
+  [/\n\s*(標記[:：]?\s*)?參考資料足以完整回答(問題)?[。.]?\s*$/, "full"],
+  [/\n\s*(標記[:：]?\s*)?(參考資料)?只能回答一部分[^\n]*$/, "partial"],
+  [/\n\s*(標記[:：]?\s*)?參考資料完全無法回答[^\n]*$/, "none"],
+];
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -166,8 +172,14 @@ async function chat(question: string, history: { role: string; content: string }
     // 由 AI 自己回報是否真的答得出來；沒有標記時用文字判斷
     const m = answer.match(STATUS_TAG);
     answer = answer.replace(STATUS_TAG, "").trim();
-    status = m ? ({ 完整: "full", 部分: "partial", 無資料: "none" } as const)[m[1] as "完整" | "部分" | "無資料"]
-      : NO_INFO.test(answer) ? (answer.length < 90 ? "none" : "partial") : "full";
+    let found: "full" | "partial" | "none" | null =
+      m ? ({ 完整: "full", 部分: "partial", 無資料: "none" } as const)[m[1] as "完整" | "部分" | "無資料"] : null;
+    for (const [re, st] of STATUS_TEXT) {
+      if (re.test(answer)) { answer = answer.replace(re, "").trim(); found ??= st; }
+    }
+    status = found ?? (NO_INFO.test(answer) ? (answer.length < 90 ? "none" : "partial") : "full");
+    // AI 說「完整」但答案裡出現「知識庫沒有」：至少算部分回答
+    if (status === "full" && NO_INFO.test(answer)) status = "partial";
     // 我們自己的標記不該出現在答案中間
     answer = answer.replace(/[【\[]\s*(完整|部分|無資料)\s*[】\]]/g, "").trim();
     if (status === "none") sources = [];
