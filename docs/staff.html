@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>行政人員端｜東華大學入學行政 AI 助理</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="staff">
+<div class="app">
+  <header>
+    <span class="links"><a href="index.html">學生端</a>　<a href="#" id="logout" hidden>登出</a></span>
+    <h1>🗂️ 入學行政 AI 助理｜行政人員端</h1>
+    <p>內部作業知識・學生常見問題・經驗分享</p>
+  </header>
+
+  <!-- 登入 -->
+  <main id="loginPane">
+    <section class="panel">
+      <h2>行政人員登入</h2>
+      <div class="status">這裡的內容包含內部作業資料，只開放處理入學業務的行政人員使用。</div>
+      <div class="row">
+        <input type="password" id="key" placeholder="行政人員密碼" style="flex:1">
+        <button class="primary" id="login">登入</button>
+      </div>
+      <div class="status" id="loginStatus"></div>
+    </section>
+  </main>
+
+  <div id="app" hidden>
+    <nav class="tabs">
+      <button data-tab="ask" class="on">內部問答</button>
+      <button data-tab="top">學生常問 Top 10</button>
+      <button data-tab="note">分享經驗</button>
+    </nav>
+
+    <!-- 內部問答 -->
+    <div class="pane" id="pane-ask">
+      <main id="chat">
+        <div class="welcome" id="welcome">
+          <h2>行政作業上有什麼要查？</h2>
+          <div>會同時查內部作業知識（🔒）與公開規定</div>
+          <div class="chips">
+            <button class="chip">學生錯過報到資料上傳期限怎麼處理？</button>
+            <button class="chip">新生最常打電話問什麼？</button>
+            <button class="chip">延誤繳費的處理流程？</button>
+          </div>
+        </div>
+      </main>
+      <form class="ask" id="form">
+        <textarea id="q" rows="1" placeholder="輸入問題，Enter 送出" required></textarea>
+        <button class="primary" id="send" type="submit">送出</button>
+      </form>
+    </div>
+
+    <!-- 熱門問題 -->
+    <div class="pane" id="pane-top" hidden>
+      <main>
+        <div class="row" style="margin:0 0 12px">
+          <span class="status" id="topStatus">載入中…</span>
+          <button class="ghost" id="topRefresh" style="margin-left:auto">重新統計</button>
+        </div>
+        <div id="topList"></div>
+      </main>
+    </div>
+
+    <!-- 分享經驗 -->
+    <div class="pane" id="pane-note" hidden>
+      <main>
+        <section class="panel">
+          <h2>把處理經驗寫下來</h2>
+          <div class="status">例如：某類例外怎麼處理、要會辦哪個單位、學生常誤解的地方。經管理者審核後會加入內部知識庫，之後的同事就查得到。<b>請不要寫任何學生的姓名、學號等個人資料。</b></div>
+          <label>標題</label>
+          <input type="text" id="nTitle" placeholder="例如：錯過報到資料上傳期限的補件方式">
+          <label>內容</label>
+          <textarea id="nContent" placeholder="情境、處理步驟、注意事項、聯絡窗口……"></textarea>
+          <label>分享者（選填）</label>
+          <input type="text" id="nAuthor" placeholder="例如：綜合業務組">
+          <div class="row">
+            <button class="primary" id="nSend">送出審核</button>
+            <span class="status" id="nStatus"></span>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
+</div>
+
+<script src="config.js"></script>
+<script>
+const URL_ = window.APP_CONFIG.FUNCTION_URL;
+const $ = id => document.getElementById(id);
+let KEY = '';
+try { KEY = sessionStorage.getItem('staff_key') || ''; } catch {}
+const history = [];
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function md(text) {
+  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').split('\n');
+  let html = '', list = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    const h = line.match(/^#{1,6}\s+(.*)/);
+    if (h) { if (list) { html += `</${list}>`; list = null; } html += `<p><strong>${h[1]}</strong></p>`; continue; }
+    const ul = line.match(/^[-*•]\s+(.*)/), ol = line.match(/^\d+[.、)]\s*(.*)/);
+    const type = ul ? 'ul' : ol ? 'ol' : null;
+    if (type) {
+      if (list !== type) { if (list) html += `</${list}>`; html += `<${type}>`; list = type; }
+      html += `<li>${(ul || ol)[1]}</li>`;
+    } else {
+      if (list) { html += `</${list}>`; list = null; }
+      if (line) html += `<p>${line}</p>`;
+    }
+  }
+  if (list) html += `</${list}>`;
+  return html;
+}
+const fmt = t => t ? new Date(t).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+async function api(body) {
+  const r = await fetch(URL_, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, staff_key: KEY }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401) { logout(); throw new Error(d.error || '請重新登入'); }
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+
+// ── 登入 ──
+async function login() {
+  KEY = $('key').value.trim() || KEY;
+  if (!KEY) return;
+  $('loginStatus').textContent = '驗證中…';
+  try {
+    await api({ action: 'staff_login' });
+    try { sessionStorage.setItem('staff_key', KEY); } catch {}
+    $('loginPane').hidden = true; $('app').hidden = false; $('logout').hidden = false;
+  } catch (e) { $('loginStatus').textContent = e.message; $('loginStatus').className = 'status err'; }
+}
+function logout() {
+  KEY = ''; try { sessionStorage.removeItem('staff_key'); } catch {}
+  $('loginPane').hidden = false; $('app').hidden = true; $('logout').hidden = true;
+}
+$('login').onclick = login;
+$('key').onkeydown = e => { if (e.key === 'Enter') login(); };
+$('logout').onclick = e => { e.preventDefault(); logout(); };
+
+// ── 分頁 ──
+let topLoaded = false;
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== 'pane-' + b.dataset.tab);
+  if (b.dataset.tab === 'top' && !topLoaded) loadTop();
+});
+
+// ── 內部問答 ──
+const chat = $('chat'), form = $('form'), q = $('q'), send = $('send');
+function add(role, html) {
+  $('welcome')?.remove();
+  const row = document.createElement('div');
+  row.className = 'msg ' + role;
+  row.innerHTML = `<div class="bubble">${html}</div>`;
+  chat.appendChild(row);
+  row.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  return row.firstChild;
+}
+async function ask(question) {
+  question = question.trim();
+  if (!question) return;
+  add('user', esc(question));
+  const bubble = add('bot', '<span class="typing"><span></span><span></span><span></span></span>');
+  send.disabled = true;
+  try {
+    const d = await api({ action: 'chat', question, history: history.slice(-4) });
+    let html = md(d.answer);
+    if (d.sources?.length) html += `<div class="sources">📄 資料來源：${d.sources.map(s =>
+      esc(s) + (d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : '')).join('、')}</div>`;
+    bubble.innerHTML = html;
+    history.push({ role: 'user', content: question }, { role: 'assistant', content: d.answer });
+  } catch (e) {
+    bubble.innerHTML = `<span style="color:#b3261e">${esc(e.message)}</span>`;
+  } finally { send.disabled = false; }
+}
+form.addEventListener('submit', e => { e.preventDefault(); const v = q.value; q.value = ''; q.style.height = ''; ask(v); });
+q.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
+q.addEventListener('input', () => { q.style.height = 'auto'; q.style.height = q.scrollHeight + 'px'; });
+document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+
+// ── 熱門問題 ──
+async function loadTop(refresh = false) {
+  $('topStatus').textContent = refresh ? '重新統計中（約 10 秒）…' : '載入中…';
+  $('topRefresh').disabled = true;
+  try {
+    const d = await api({ action: 'top_questions', refresh });
+    topLoaded = true;
+    $('topStatus').textContent = `依學生端最近 ${d.total} 則提問歸類（統計時間 ${fmt(d.updated_at)}）`;
+    $('topList').innerHTML = d.items.length ? d.items.map((it, i) => `
+      <div class="top-item"><div class="rank">${i + 1}</div><div>
+        <b>${esc(it.topic)}</b>
+        <div class="meta">${it.count} 則提問${it.gaps ? `・<span style="color:#b3261e">${it.gaps} 則答不完整，需要補資料</span>` : '・AI 都答得出來'}・最近 ${fmt(it.last)}</div>
+        <ul class="ex">${it.examples.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      </div></div>`).join('') : '<div class="status">學生端還沒有提問紀錄</div>';
+  } catch (e) { $('topStatus').textContent = e.message; }
+  finally { $('topRefresh').disabled = false; }
+}
+$('topRefresh').onclick = () => loadTop(true);
+
+// ── 分享經驗 ──
+$('nSend').onclick = async () => {
+  $('nSend').disabled = true;
+  try {
+    await api({ action: 'submit_note', title: $('nTitle').value, content: $('nContent').value, author: $('nAuthor').value });
+    $('nStatus').textContent = '已送出，謝謝分享！管理者審核後會加入內部知識庫。'; $('nStatus').className = 'status ok';
+    $('nTitle').value = ''; $('nContent').value = '';
+  } catch (e) { $('nStatus').textContent = e.message; $('nStatus').className = 'status err'; }
+  finally { $('nSend').disabled = false; }
+};
+
+if (KEY) login();
+</script>
+</body>
+</html>

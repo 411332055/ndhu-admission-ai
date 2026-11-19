@@ -11,7 +11,7 @@
 <body>
 <div class="app">
   <header>
-    <span class="links"><a href="index.html">← 回到問答</a></span>
+    <span class="links"><a href="index.html">學生端</a>　<a href="staff.html">行政人員端</a></span>
     <h1>📚 知識庫管理</h1>
     <p>新增、更新、刪除入學行政知識；查看使用者問了什麼、哪些問題答不出來</p>
   </header>
@@ -29,6 +29,8 @@
       <h2>新增 / 更新知識</h2>
       <label>上傳檔案（.txt .md .pdf .docx，可多選；檔名會當作來源名稱）</label>
       <input type="file" id="files" multiple accept=".txt,.md,.pdf,.docx">
+      <label>開放對象</label>
+      <select id="aud1" class="aud"><option value="public">公開：學生、家長都查得到（官方規定、公告）</option><option value="staff">內部：只有行政人員登入後查得到（作業流程、經驗、例外處理）</option></select>
       <label>或直接貼上文字</label>
       <input type="text" id="source" placeholder="來源名稱，例如：115學年度申請入學簡章">
       <textarea id="text" placeholder="貼上入學規定、FAQ、公告內容……"></textarea>
@@ -42,6 +44,8 @@
       <h2>從網址匯入（學校公告、PDF）</h2>
       <label>網址（PDF 或網頁，一行一個；可在網址後面加「 | 來源名稱」）</label>
       <textarea id="urls" style="min-height:90px" placeholder="https://aa.ndhu.edu.tw/....pdf | 115學年度新生註冊須知"></textarea>
+      <label>開放對象</label>
+      <select id="aud2" class="aud"><option value="public">公開</option><option value="staff">內部（只限行政人員）</option></select>
       <div class="row">
         <button class="primary" id="importUrls">匯入</button>
         <span class="status" id="urlStatus">PDF 由 Gemini 轉成文字，每份約 10～60 秒</span>
@@ -50,8 +54,14 @@
 
     <section class="panel">
       <h2>知識來源 <button class="ghost" id="refresh" style="float:right">重新整理</button></h2>
-      <table><thead><tr><th>來源</th><th>段數</th><th>更新時間</th><th></th></tr></thead>
-        <tbody id="srcList"><tr><td colspan="4" class="status">請先登入</td></tr></tbody></table>
+      <table><thead><tr><th>來源</th><th>對象</th><th>段數</th><th>更新時間</th><th></th></tr></thead>
+        <tbody id="srcList"><tr><td colspan="5" class="status">請先登入</td></tr></tbody></table>
+    </section>
+
+    <section class="panel">
+      <h2>行政人員經驗筆記審核</h2>
+      <div class="status" id="noteSummary">請先登入。通過的筆記會加入「內部」知識庫，只有行政人員查得到。</div>
+      <div id="noteList"></div>
     </section>
 
     <section class="panel">
@@ -88,9 +98,16 @@ async function api(body) {
 async function loadSources() {
   const { sources } = await api({ action: 'list' });
   $('srcList').innerHTML = sources.length ? sources.sort((a, b) => b.updated.localeCompare(a.updated)).map(s =>
-    `<tr><td>${esc(s.source)}</td><td>${s.chunks}</td><td>${fmt(s.updated)}</td>
+    `<tr><td>${esc(s.source)}</td>
+     <td><button class="ghost aud-btn ${s.audience === 'staff' ? 'staff' : ''}" data-aud="${esc(s.source)}" data-cur="${s.audience}" title="點一下切換">${s.audience === 'staff' ? '🔒 內部' : '公開'}</button></td>
+     <td>${s.chunks}</td><td>${fmt(s.updated)}</td>
      <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`).join('')
-    : '<tr><td colspan="4" class="status">知識庫目前是空的</td></tr>';
+    : '<tr><td colspan="5" class="status">知識庫目前是空的</td></tr>';
+  document.querySelectorAll('[data-aud]').forEach(b => b.onclick = async () => {
+    const to = b.dataset.cur === 'staff' ? 'public' : 'staff';
+    if (!confirm(`把「${b.dataset.aud}」改成${to === 'staff' ? '內部（學生查不到）' : '公開（學生查得到）'}？`)) return;
+    await api({ action: 'set_audience', source: b.dataset.aud, audience: to }); loadSources();
+  });
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (!confirm(`確定刪除「${b.dataset.del}」？`)) return;
     await api({ action: 'delete', source: b.dataset.del }); loadSources();
@@ -107,7 +124,7 @@ async function loadStats() {
     const btn = r.status === 'full' ? '' : r.resolved
       ? `<button class="ghost" data-undo="${r.id}">取消已補</button>`
       : `<button class="ghost" data-res="${r.id}">已補充</button>`;
-    return `<tr><td><details><summary>${esc(r.question)}</summary><div class="ans">${esc(r.answer || '')}</div></details></td>
+    return `<tr><td><details><summary>${r.role === 'staff' ? '<span class="tag staff">行政</span> ' : ''}${esc(r.question)}</summary><div class="ans">${esc(r.answer || '')}</div></details></td>
       <td><span class="tag ${c}">${r.resolved ? '已補充' : t}</span></td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
   }).join('') : '<tr><td colspan="4" class="status">目前沒有待補的缺口 🎉</td></tr>';
   document.querySelectorAll('[data-res],[data-undo]').forEach(b => b.onclick = async () => {
@@ -118,10 +135,31 @@ async function loadStats() {
 }
 $('gapOnly').onchange = () => loadStats();
 
+async function loadNotes() {
+  const { notes } = await api({ action: 'notes' });
+  const pending = notes.filter(n => n.status === 'pending');
+  status('noteSummary', `待審核 ${pending.length} 則，共 ${notes.length} 則。通過的筆記會加入「內部」知識庫，只有行政人員查得到。`);
+  const label = { pending: ['待審核', 'warn'], approved: ['已通過', 'ok'], rejected: ['未採用', ''] };
+  $('noteList').innerHTML = notes.map(n => {
+    const [t, c] = label[n.status];
+    return `<div class="note"><div class="note-head"><span class="tag ${c}">${t}</span> <b>${esc(n.title)}</b>
+      <span class="status">${n.author ? esc(n.author) + '・' : ''}${fmt(n.created_at)}</span></div>
+      <div class="ans">${esc(n.content)}</div>
+      ${n.status === 'pending' ? `<div class="row"><button class="primary" data-ok="${n.id}">通過，加入內部知識庫</button>
+        <button class="ghost" data-no="${n.id}">不採用</button></div>` : ''}</div>`;
+  }).join('') || '<div class="status">還沒有人分享筆記</div>';
+  document.querySelectorAll('[data-ok],[data-no]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await api({ action: 'review_note', id: Number(b.dataset.ok || b.dataset.no), approve: !!b.dataset.ok }); }
+    catch (e) { alert(e.message); }
+    loadNotes(); loadSources();
+  });
+}
+
 async function login() {
   KEY = $('key').value.trim();
   try { sessionStorage.setItem('admin_key', KEY); } catch {}
-  try { await loadSources(); await loadStats(); status('loginStatus', '已登入', 'ok'); }
+  try { await loadSources(); await loadStats(); await loadNotes(); status('loginStatus', '已登入', 'ok'); }
   catch (e) { status('loginStatus', e.message, 'err'); }
 }
 
@@ -154,7 +192,7 @@ async function upload() {
       status('upStatus', `處理中 ${i + 1}/${jobs.length}：${j.source}…`);
       const text = j.text ?? await readFile(j.file);
       if (!text.trim()) throw new Error(`「${j.source}」讀不到文字（可能是掃描檔）`);
-      const r = await api({ action: 'ingest', source: j.source, text });
+      const r = await api({ action: 'ingest', source: j.source, text, audience: $('aud1').value });
       status('upStatus', `「${r.source}」已加入，共 ${r.chunks} 段`, 'ok');
     }
     $('files').value = ''; $('text').value = ''; $('source').value = '';
@@ -170,7 +208,7 @@ async function bigPdf(url, source, i, n) {
   let chunks = 0, truncated = false;
   for (let from = 1; from <= 300; from += 10) {
     status('urlStatus', `匯入中 ${i + 1}/${n}：${source}（第 ${from}-${from + 9} 頁…）`);
-    const r = await api({ action: 'pdf_part', fileUri, url, source, from, to: from + 9 });
+    const r = await api({ action: 'pdf_part', fileUri, url, source, from, to: from + 9, audience: $('aud2').value });
     if (r.empty) break;
     chunks += r.chunks; truncated = truncated || r.truncated;
   }
@@ -189,7 +227,7 @@ async function importUrls() {
     status('urlStatus', `匯入中 ${i + 1}/${lines.length}：${source}…`);
     try {
       let r;
-      try { r = await api({ action: 'ingest_url', url, source }); }
+      try { r = await api({ action: 'ingest_url', url, source, audience: $('aud2').value }); }
       catch (e) {
         // PDF 太大或一次轉太久（逾時）→ 改用分段匯入；下載失敗、密碼錯誤則直接回報
         const msg = String(e.message);
@@ -208,7 +246,7 @@ $('login').onclick = login;
 $('importUrls').onclick = importUrls;
 $('key').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('upload').onclick = upload;
-$('refresh').onclick = () => { loadSources(); loadStats(); };
+$('refresh').onclick = () => { loadSources(); loadStats(); loadNotes(); };
 if (KEY) login();
 </script>
 </body>

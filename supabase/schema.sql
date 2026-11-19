@@ -32,29 +32,55 @@ create table if not exists public.chat_logs (
 alter table public.kb_chunks enable row level security;
 alter table public.chat_logs enable row level security;
 
--- 向量相似度搜尋
+-- 資料分級：public 學生／家長可查；staff 只有行政人員登入後可查（過濾在資料庫函式裡做）
+alter table public.kb_chunks add column if not exists audience text not null default 'public' check (audience in ('public','staff'));
+create index if not exists kb_chunks_audience_idx on public.kb_chunks (audience);
+alter table public.chat_logs add column if not exists role text not null default 'student';  -- student / staff
+
+-- 行政人員分享的經驗筆記（隱性知識外化），管理者審核通過後才寫入 staff 知識庫
+create table if not exists public.staff_notes (
+  id bigserial primary key,
+  title text not null,
+  content text not null,
+  author text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  created_at timestamptz not null default now(),
+  reviewed_at timestamptz
+);
+alter table public.staff_notes enable row level security;
+
+-- 快取（熱門問題統計，避免每次都呼叫 Gemini）
+create table if not exists public.app_cache (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_cache enable row level security;
+
+-- 向量相似度搜尋（include_staff=false 時只搜公開資料）
 create or replace function public.match_chunks(
   query_embedding extensions.vector(768),
   match_count int default 4,
-  min_similarity float default 0.5
+  min_similarity float default 0.5,
+  include_staff boolean default false
 )
-returns table (id bigint, source text, content text, similarity float)
+returns table (id bigint, source text, content text, similarity float, audience text)
 language sql stable
 set search_path = public, extensions
 as $$
-  select c.id, c.source, c.content, 1 - (c.embedding <=> query_embedding) as similarity
+  select c.id, c.source, c.content, 1 - (c.embedding <=> query_embedding) as similarity, c.audience
   from public.kb_chunks c
-  where 1 - (c.embedding <=> query_embedding) >= min_similarity
+  where (include_staff or c.audience = 'public')
+    and 1 - (c.embedding <=> query_embedding) >= min_similarity
   order by c.embedding <=> query_embedding
   limit match_count;
 $$;
+revoke execute on function public.match_chunks(extensions.vector, int, float, boolean) from public, anon, authenticated;
+grant execute on function public.match_chunks(extensions.vector, int, float, boolean) to service_role;
 
-revoke execute on function public.match_chunks(extensions.vector, int, float) from public, anon, authenticated;
-grant execute on function public.match_chunks(extensions.vector, int, float) to service_role;
-
--- 備援檢索：向量額度用完時，用「中文雙字詞」重疊比例找相關段落（後端平常也會和向量結果合併）
-create or replace function public.match_chunks_text(q text, match_count int default 4)
-returns table (id bigint, source text, content text, similarity float)
+-- 備援檢索：中文雙字詞重疊比例
+create or replace function public.match_chunks_text(q text, match_count int default 4, include_staff boolean default false)
+returns table (id bigint, source text, content text, similarity float, audience text)
 language sql stable
 set search_path = public
 as $$
@@ -66,14 +92,15 @@ as $$
   ),
   total as (select greatest(count(*), 1)::float as n from grams),
   scored as (
-    select c.id, c.source, c.content,
+    select c.id, c.source, c.content, c.audience,
            (select count(*) from grams where strpos(c.content, grams.g) > 0)::float / (select n from total) as s
     from public.kb_chunks c
+    where include_staff or c.audience = 'public'
   )
-  select id, source, content, s from scored
+  select id, source, content, s, audience from scored
   where s >= 0.35
   order by s desc, id
   limit match_count;
 $$;
-revoke execute on function public.match_chunks_text(text, int) from public, anon, authenticated;
-grant execute on function public.match_chunks_text(text, int) to service_role;
+revoke execute on function public.match_chunks_text(text, int, boolean) from public, anon, authenticated;
+grant execute on function public.match_chunks_text(text, int, boolean) to service_role;
