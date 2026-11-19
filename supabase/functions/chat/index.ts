@@ -39,7 +39,15 @@ const SYSTEM = `你是國立東華大學入學行政 AI 助理。
 規則：
 1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
 2. 參考資料沒有的內容，回答「目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）」，不要自行編造。
-3. 日期、名額、金額等數字必須和參考資料完全一致。`;
+3. 日期、名額、金額等數字必須和參考資料完全一致。
+4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答：
+   【完整】參考資料足以完整回答問題
+   【部分】只能回答一部分，問題中有細節（例如具體標準、分數、日期）參考資料沒有
+   【無資料】參考資料完全無法回答
+   這個標記只用來統計，使用者看不到。`;
+
+const STATUS_TAG = /\s*[【\[]\s*(完整|部分|無資料)\s*[】\]]\s*$/;
+const NO_INFO = /目前知識庫沒有相關資訊/;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -135,7 +143,8 @@ async function chat(question: string, history: { role: string; content: string }
   }
 
   let answer: string;
-  const sources = [...new Set((hits ?? []).map((h: any) => h.source))] as string[];
+  let status: "full" | "partial" | "none" = "none";
+  let sources = [...new Set((hits ?? []).map((h: any) => h.source))] as string[];
   const top = hits?.[0]?.similarity ?? null;
 
   if (!hits?.length) {
@@ -154,10 +163,18 @@ async function chat(question: string, history: { role: string; content: string }
     });
     answer = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim()
       || "抱歉，暫時無法產生回答，請稍後再試。";
+    // 由 AI 自己回報是否真的答得出來；沒有標記時用文字判斷
+    const m = answer.match(STATUS_TAG);
+    answer = answer.replace(STATUS_TAG, "").trim();
+    status = m ? ({ 完整: "full", 部分: "partial", 無資料: "none" } as const)[m[1] as "完整" | "部分" | "無資料"]
+      : NO_INFO.test(answer) ? (answer.length < 90 ? "none" : "partial") : "full";
+    // 我們自己的標記不該出現在答案中間
+    answer = answer.replace(/[【\[]\s*(完整|部分|無資料)\s*[】\]]/g, "").trim();
+    if (status === "none") sources = [];
   }
 
   await sb.from("chat_logs").insert({
-    question, answer, sources, top_score: top, answered: !!hits?.length,
+    question, answer, sources, top_score: top, answered: status === "full", status,
   });
   return json({ answer, sources, top_score: top });
 }
@@ -326,12 +343,18 @@ async function list() {
 
 async function stats() {
   const { data, error } = await sb.from("chat_logs")
-    .select("question, answered, top_score, created_at")
-    .order("created_at", { ascending: false }).limit(100);
+    .select("id, question, answer, status, resolved, top_score, created_at")
+    .order("created_at", { ascending: false }).limit(200);
   if (error) throw error;
   const total = data?.length ?? 0;
-  const gaps = (data ?? []).filter((r) => !r.answered);
+  const gaps = (data ?? []).filter((r) => r.status !== "full" && !r.resolved);
   return json({ total, unanswered: gaps.length, recent: data, gaps });
+}
+
+async function resolveGap(id: number, resolved = true) {
+  const { error } = await sb.from("chat_logs").update({ resolved }).eq("id", id);
+  if (error) throw error;
+  return json({ ok: true });
 }
 
 Deno.serve(async (req) => {
@@ -351,6 +374,7 @@ Deno.serve(async (req) => {
     if (action === "pdf_part") return await pdfPart(body.fileUri, body.source, body.url, Number(body.from), Number(body.to));
     if (action === "list") return await list();
     if (action === "stats") return await stats();
+    if (action === "resolve_gap") return await resolveGap(Number(body.id), body.resolved !== false);
     if (action === "delete") {
       const { error } = await sb.from("kb_chunks").delete().eq("source", body.source);
       if (error) throw error;

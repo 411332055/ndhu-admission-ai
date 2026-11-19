@@ -22,7 +22,9 @@ create table if not exists public.chat_logs (
   answer      text,
   sources     text[],
   top_score   real,
-  answered    boolean,                    -- 知識庫有沒有找到相關資料
+  answered    boolean,                    -- status = 'full'
+  status      text not null default 'full', -- full 完整回答 / partial 部分回答 / none 無資料（由 AI 回報）
+  resolved    boolean not null default false, -- 後台按「已補充」後不再列為缺口
   created_at  timestamptz not null default now()
 );
 

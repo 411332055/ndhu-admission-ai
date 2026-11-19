@@ -57,7 +57,8 @@
     <section class="panel">
       <h2>問答紀錄與知識缺口</h2>
       <div class="status" id="statSummary">請先登入</div>
-      <table><thead><tr><th>問題</th><th>狀態</th><th>時間</th></tr></thead>
+      <div class="tabs-row"><label><input type="checkbox" id="gapOnly" checked> 只看待補缺口</label></div>
+      <table><thead><tr><th>問題</th><th>狀態</th><th>時間</th><th></th></tr></thead>
         <tbody id="logList"></tbody></table>
     </section>
   </main>
@@ -98,11 +99,24 @@ async function loadSources() {
 
 async function loadStats() {
   const d = await api({ action: 'stats' });
-  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則知識庫找不到資料（＝需要補充的知識缺口）`);
-  $('logList').innerHTML = d.recent.map(r =>
-    `<tr><td>${esc(r.question)}</td><td><span class="tag ${r.answered ? 'ok' : ''}">${r.answered ? '已回答' : '知識缺口'}</span></td>
-     <td>${fmt(r.created_at)}</td></tr>`).join('');
+  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答或沒有資料）。點問題可看 AI 的回答；補好資料後按「已補充」。`);
+  const label = { full: ['已回答', 'ok'], partial: ['部分回答', 'warn'], none: ['知識缺口', ''] };
+  const rows = $('gapOnly').checked ? d.gaps : d.recent;
+  $('logList').innerHTML = rows.length ? rows.map(r => {
+    const [t, c] = label[r.status] || label.full;
+    const btn = r.status === 'full' ? '' : r.resolved
+      ? `<button class="ghost" data-undo="${r.id}">取消已補</button>`
+      : `<button class="ghost" data-res="${r.id}">已補充</button>`;
+    return `<tr><td><details><summary>${esc(r.question)}</summary><div class="ans">${esc(r.answer || '')}</div></details></td>
+      <td><span class="tag ${c}">${r.resolved ? '已補充' : t}</span></td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="status">目前沒有待補的缺口 🎉</td></tr>';
+  document.querySelectorAll('[data-res],[data-undo]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    await api({ action: 'resolve_gap', id: Number(b.dataset.res || b.dataset.undo), resolved: !!b.dataset.res });
+    loadStats();
+  });
 }
+$('gapOnly').onchange = () => loadStats();
 
 async function login() {
   KEY = $('key').value.trim();
