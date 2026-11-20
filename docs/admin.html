@@ -116,16 +116,16 @@ async function loadSources() {
 
 async function loadStats() {
   const d = await api({ action: 'stats' });
-  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答或沒有資料）。點問題可看 AI 的回答；補好資料後按「已補充」。`);
-  const label = { full: ['已回答', 'ok'], partial: ['部分回答', 'warn'], none: ['知識缺口', ''] };
+  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答或沒有資料）${d.blocked ? `，攔截 ${d.blocked} 則詢問密碼或系統資訊的提問` : ''}。點問題可看 AI 的回答；補好資料後按「已補充」。`);
+  const label = { full: ['已回答', 'ok'], partial: ['部分回答', 'warn'], none: ['知識缺口', ''], blocked: ['🛡️ 已攔截', 'staff'] };
   const rows = $('gapOnly').checked ? d.gaps : d.recent;
   $('logList').innerHTML = rows.length ? rows.map(r => {
     const [t, c] = label[r.status] || label.full;
-    const btn = r.status === 'full' ? '' : r.resolved
+    const btn = r.status === 'full' || r.status === 'blocked' ? '' : r.resolved
       ? `<button class="ghost" data-undo="${r.id}">取消已補</button>`
       : `<button class="ghost" data-res="${r.id}">已補充</button>`;
     return `<tr><td><details><summary>${r.role === 'staff' ? '<span class="tag staff">行政</span> ' : ''}${esc(r.question)}</summary><div class="ans">${esc(r.answer || '')}</div></details></td>
-      <td><span class="tag ${c}">${r.resolved ? '已補充' : t}</span></td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
+      <td><span class="tag ${c}">${r.resolved && r.status !== 'blocked' ? '已補充' : t}</span></td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
   }).join('') : '<tr><td colspan="4" class="status">目前沒有待補的缺口 🎉</td></tr>';
   document.querySelectorAll('[data-res],[data-undo]').forEach(b => b.onclick = async () => {
     b.disabled = true;
