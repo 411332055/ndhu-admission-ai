@@ -350,10 +350,17 @@ async function chat(
   const hist = Array.isArray(history) ? history : [];
   const cacheKey = !staff && !imgPart && hist.length === 0 ? `qa:public:${normQ(question)}` : null;
 
-  // 平行檢查限流與熱門問題快取
-  const [allowed, cachedRes] = await Promise.all([
+  // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
+  const prevUser = [...hist].reverse().find((m) => m?.role === "user" && m?.content);
+  const baseQuery = prevUser && question.length <= 25
+    ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
+    : question;
+
+  // 平行檢查限流、熱門問題快取與口語同義詞展開（少一次資料庫往返，直接提速）
+  const [allowed, cachedRes, expandedRes] = await Promise.all([
     allowRequest(`chat:${role}:${ip}`, staff ? 15 : 8, 60),
     cacheKey ? sb.from("app_cache").select("value, updated_at").eq("key", cacheKey).maybeSingle() : Promise.resolve({ data: null }),
+    sb.rpc("expand_query", { q: baseQuery }).then((r) => r.data).catch(() => null),
   ]);
   if (!allowed) return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
 
@@ -366,18 +373,7 @@ async function chat(
     return json({ answer: v.answer, sources: v.sources ?? [], images: v.images ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
   }
 
-  // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
-  const prevUser = [...hist].reverse().find((m) => m?.role === "user" && m?.content);
-  const baseQuery = prevUser && question.length <= 25
-    ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
-    : question;
-
-  // 口語同義詞展開（從資料庫 kb_synonyms 自動補上官方正式用語，0 消耗 Gemini 額度）
-  let searchQuery = baseQuery;
-  try {
-    const { data: expanded } = await sb.rpc("expand_query", { q: baseQuery });
-    if (typeof expanded === "string" && expanded.trim()) searchQuery = expanded.trim();
-  } catch {}
+  const searchQuery = typeof expandedRes === "string" && expandedRes.trim() ? expandedRes.trim() : baseQuery;
 
   // 混合檢索平行跑：向量（語意）與關鍵字（標題＋內文＋英數代碼）同時執行，再用 RRF 融合重排
   const vecTask = (async () => {
@@ -409,9 +405,16 @@ async function chat(
     if (mapPick.images.length) {
       const names = mapPick.images.map((x) => `「${x.source}」`).join("、");
       const answer = `已為你找到 ${names}！請直接點選下方平面圖放大檢視教室與空間位置。`;
-      const { data: logRow } = await sb.from("chat_logs").insert({
-        question: logQuestion, answer, sources: mapPick.sources, top_score: top, answered: true, status: "full", role,
-      }).select("id").single();
+      const [{ data: logRow }] = await Promise.all([
+        sb.from("chat_logs").insert({
+          question: logQuestion, answer, sources: mapPick.sources, top_score: top, answered: true, status: "full", role,
+        }).select("id").single(),
+        cacheKey ? sb.from("app_cache").upsert({
+          key: cacheKey,
+          value: { answer, sources: mapPick.sources, images: mapPick.images, top_score: top },
+          updated_at: new Date().toISOString(),
+        }) : Promise.resolve(),
+      ]);
       return json({ answer, sources: mapPick.sources, images: mapPick.images, internal: [], top_score: top, log_id: logRow?.id ?? null });
     }
   }
@@ -496,16 +499,16 @@ async function chat(
           const { answer, status, usedIndices } = cleanAnswer(raw);
           const { sources: finalSources, usedHits, images: finalImages } = pickSources(hits, status, usedIndices);
           const finalInternal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
-          const { data: logRow } = await sb.from("chat_logs").insert({
-            question: logQuestion, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
-          }).select("id").single();
-          if (cacheKey && status === "full") {
-            await sb.from("app_cache").upsert({
+          const [{ data: logRow }] = await Promise.all([
+            sb.from("chat_logs").insert({
+              question: logQuestion, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
+            }).select("id").single(),
+            cacheKey && status === "full" ? sb.from("app_cache").upsert({
               key: cacheKey,
               value: { answer, sources: finalSources, images: finalImages, top_score: top },
               updated_at: new Date().toISOString(),
-            });
-          }
+            }) : Promise.resolve(),
+          ]);
           send({ type: "done", answer, sources: finalSources, images: finalImages, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
         } catch (e) {
           console.error("stream read error:", e);
