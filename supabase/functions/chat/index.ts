@@ -507,8 +507,8 @@ async function feedback(id: number, helpful: boolean, ip = "unknown") {
 
 async function ingest(source: string, text: string, append = false, audience = "public") {
   audience = audience === "staff" ? "staff" : "public";
-  source = String(source ?? "").trim().slice(0, 200);
-  text = String(text ?? "");
+  source = String(source ?? "").normalize("NFKC").trim().slice(0, 200);
+  text = String(text ?? "").normalize("NFKC");
   if (!source || !text.trim()) return json({ error: "需要 source 與 text" }, 400);
   const chunks = splitText(text);
   if (chunks.length > 500) return json({ error: "內容太長，請分成多份上傳" }, 400);
@@ -798,6 +798,31 @@ async function submitNote(title: string, content: string, author: string) {
   return json({ ok: true });
 }
 
+async function listSynonyms() {
+  const { data, error } = await sb.from("kb_synonyms").select("term, expands").order("term");
+  if (error) throw error;
+  return json({ synonyms: data ?? [] });
+}
+
+async function saveSynonym(term: string, expands: string) {
+  term = String(term ?? "").normalize("NFKC").trim().slice(0, 40);
+  expands = String(expands ?? "").normalize("NFKC").trim().slice(0, 200);
+  if (!term || !expands) return json({ error: "請填寫口語詞與對應官方詞" }, 400);
+  const { error } = await sb.from("kb_synonyms").upsert({ term, expands });
+  if (error) throw error;
+  await clearQaCache();
+  return json({ ok: true });
+}
+
+async function deleteSynonym(term: string) {
+  term = String(term ?? "").trim();
+  if (!term) return json({ error: "缺少口語詞" }, 400);
+  const { error } = await sb.from("kb_synonyms").delete().eq("term", term);
+  if (error) throw error;
+  await clearQaCache();
+  return json({ ok: true });
+}
+
 async function listNotes() {
   const { data, error } = await sb.from("staff_notes").select("*").order("created_at", { ascending: false }).limit(100);
   if (error) throw error;
@@ -868,6 +893,13 @@ Deno.serve(async (req) => {
     if (action === "list") return await list();
     if (action === "stats") return await stats();
     if (action === "resolve_gap") return await resolveGap(Number(body.id), body.resolved !== false);
+    if (action === "synonyms") return await listSynonyms();
+    if (action === "save_synonym") return await saveSynonym(body.term, body.expands);
+    if (action === "delete_synonym") return await deleteSynonym(body.term);
+    if (action === "clear_cache") {
+      await clearQaCache();
+      return json({ ok: true });
+    }
     if (action === "delete") {
       const { error } = await sb.from("kb_chunks").delete().eq("source", body.source);
       if (error) throw error;

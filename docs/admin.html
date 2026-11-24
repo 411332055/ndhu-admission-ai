@@ -54,7 +54,12 @@
     </section>
 
     <section class="panel">
-      <h2>知識來源 <button class="ghost" id="refresh" style="float:right">重新整理</button></h2>
+      <h2>知識來源
+        <span style="float:right;display:flex;gap:6px">
+          <button class="ghost" id="clearCache" title="清空熱門問題快取">清除快取</button>
+          <button class="ghost" id="refresh">重新整理</button>
+        </span>
+      </h2>
       <div class="status" id="srcSummary"></div>
       <div class="filter-bar">
         <input type="text" id="srcSearch" placeholder="搜尋來源名稱…">
@@ -72,6 +77,21 @@
       <h2>行政人員經驗筆記審核</h2>
       <div class="status" id="noteSummary">請先登入。通過的筆記會加入「內部」知識庫，只有行政人員查得到。</div>
       <div id="noteList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>口語同義詞管理</h2>
+      <div class="status" id="synSummary">請先登入。學生問口語詞（例如「學貸」）時，系統會自動補上對應官方詞（例如「就學貸款」）一起搜尋。</div>
+      <div class="filter-bar">
+        <input type="text" id="synTerm" placeholder="口語詞（如：宿網）" style="max-width:180px">
+        <input type="text" id="synExpands" placeholder="對應官方詞（空白分隔，如：宿舍網路 宿網申請）">
+        <button class="primary" id="synAdd" style="min-height:40px;padding:0 14px">新增 / 更新</button>
+      </div>
+      <details style="margin-top:8px">
+        <summary class="status">展開檢視／刪除現有同義詞清單</summary>
+        <table style="margin-top:8px"><thead><tr><th>口語詞</th><th>對應官方詞</th><th></th></tr></thead>
+          <tbody id="synList"></tbody></table>
+      </details>
     </section>
 
     <section class="panel">
@@ -209,10 +229,24 @@ async function loadNotes() {
   });
 }
 
+async function loadSynonyms() {
+  const { synonyms } = await api({ action: 'synonyms' });
+  status('synSummary', `目前共有 ${synonyms.length} 組口語同義詞。新增或修改後會立即生效並清除舊快取。`);
+  $('synList').innerHTML = synonyms.length ? synonyms.map(s =>
+    `<tr><td><b>${esc(s.term)}</b></td><td>${esc(s.expands)}</td>
+     <td><button class="ghost" data-del-syn="${esc(s.term)}">刪除</button></td></tr>`).join('')
+    : '<tr><td colspan="3" class="status">尚無同義詞</td></tr>';
+  document.querySelectorAll('[data-del-syn]').forEach(b => b.onclick = async () => {
+    if (!confirm(`刪除口語詞「${b.dataset.delSyn}」？`)) return;
+    await api({ action: 'delete_synonym', term: b.dataset.delSyn });
+    loadSynonyms();
+  });
+}
+
 async function login() {
   KEY = $('key').value.trim();
   try { sessionStorage.setItem('admin_key', KEY); } catch {}
-  try { await loadSources(); await loadStats(); await loadNotes(); status('loginStatus', '已登入', 'ok'); }
+  try { await loadSources(); await loadStats(); await loadNotes(); await loadSynonyms(); status('loginStatus', '已登入', 'ok'); }
   catch (e) { status('loginStatus', e.message, 'err'); }
 }
 
@@ -332,7 +366,24 @@ $('login').onclick = login;
 $('importUrls').onclick = importUrls;
 $('key').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('upload').onclick = upload;
-$('refresh').onclick = () => { loadSources(); loadStats(); loadNotes(); };
+$('synAdd').onclick = async () => {
+  $('synAdd').disabled = true;
+  try {
+    await api({ action: 'save_synonym', term: $('synTerm').value, expands: $('synExpands').value });
+    $('synTerm').value = ''; $('synExpands').value = '';
+    loadSynonyms();
+  } catch (e) { alert(e.message); }
+  finally { $('synAdd').disabled = false; }
+};
+$('clearCache').onclick = async () => {
+  $('clearCache').disabled = true;
+  try {
+    await api({ action: 'clear_cache' });
+    status('srcSummary', '已清除全部熱門問題快取！', 'ok');
+  } catch (e) { alert(e.message); }
+  finally { $('clearCache').disabled = false; }
+};
+$('refresh').onclick = () => { loadSources(); loadStats(); loadNotes(); loadSynonyms(); };
 if (KEY) login();
 </script>
 </body>
