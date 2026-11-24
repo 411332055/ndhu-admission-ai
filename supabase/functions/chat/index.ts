@@ -33,6 +33,7 @@ function safeEqual(a: unknown, b: string) {
 const isAdmin = (k: unknown) => safeEqual(k, ADMIN_KEY);
 const isStaff = (k: unknown) => safeEqual(k, STAFF_KEY) || isAdmin(k);  // 管理者也能用行政端
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
+const FALLBACK_MODELS = [GEMINI_MODEL, "gemini-2.5-flash-lite", "gemini-2.5-flash"].filter((m, i, a) => a.indexOf(m) === i);
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
 const TOP_K = 5;
@@ -123,25 +124,38 @@ function isSafePublicUrl(raw: string) {
 }
 
 async function gemini(path: string, body: unknown) {
-  // Gemini 忙碌（429 / 500 / 503）時自動重試：等 1、2、4 秒
-  for (let attempt = 0; ; attempt++) {
-    const r = await fetch(`${API}/${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (r.ok) return data;
-    const perDay = /per day/i.test(String(data?.error?.message ?? ""));  // 每日額度用完：重試也沒用，直接回報
-    if (attempt < 3 && [429, 500, 503].includes(r.status) && !perDay) {
-      // 429 = 免費額度用完：依 Gemini 建議的秒數等待（最多 62 秒）
-      const hint = Number(String(data?.error?.message ?? "").match(/retry in ([\d.]+)s/)?.[1] ?? 0);
-      const wait = r.status === 429 && hint ? Math.min(hint + 1, 62) : 2 ** attempt;
-      await new Promise((res) => setTimeout(res, wait * 1000));
-      continue;
+  const isGen = path.startsWith(`models/${GEMINI_MODEL}:generateContent`);
+  const paths = isGen ? FALLBACK_MODELS.map((m) => `models/${m}:generateContent`) : [path];
+  let lastErr: Error | null = null;
+  for (const p of paths) {
+    // Gemini 忙碌（429 / 500 / 503）時自動重試；若是 503/429 則優先切換備援模型
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(`${API}/${p}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) return data;
+      const msg = String(data?.error?.message ?? JSON.stringify(data));
+      const perDay = /per day/i.test(msg);
+      lastErr = new Error(`Gemini ${r.status}: ${msg}`);
+      // 有備援模型且遇到 503/429/404 時，直接換下一個備援模型，不等太久
+      if (paths.length > 1 && p !== paths[paths.length - 1] && [404, 429, 500, 503].includes(r.status)) {
+        console.warn(`model ${p} failed (${r.status}), switching fallback`);
+        break;
+      }
+      if (attempt < 2 && [429, 500, 503].includes(r.status) && !perDay) {
+        const hint = Number(msg.match(/retry in ([\d.]+)s/)?.[1] ?? 0);
+        const wait = r.status === 429 && hint ? Math.min(hint + 1, 20) : 2 ** attempt;
+        await new Promise((res) => setTimeout(res, wait * 1000));
+        continue;
+      }
+      if (p === paths[paths.length - 1]) throw lastErr;
+      break;
     }
-    throw new Error(`Gemini ${r.status}: ${data?.error?.message ?? JSON.stringify(data)}`);
   }
+  throw lastErr ?? new Error("Gemini 呼叫失敗");
 }
 
 function normalize(v: number[]) {
@@ -275,23 +289,36 @@ function mergeAndRank(vecRaw: any[], kwRaw: any[], staff: boolean) {
 }
 
 async function geminiStreamFetch(path: string, body: unknown) {
-  for (let attempt = 0; ; attempt++) {
-    const r = await fetch(`${API}/${path}?alt=sse`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-      body: JSON.stringify(body),
-    });
-    if (r.ok && r.body) return r;
-    const data = await r.json().catch(() => ({}));
-    const perDay = /per day/i.test(String(data?.error?.message ?? ""));
-    if (attempt < 2 && [429, 500, 503].includes(r.status) && !perDay) {
-      const hint = Number(String(data?.error?.message ?? "").match(/retry in ([\d.]+)s/)?.[1] ?? 0);
-      const wait = r.status === 429 && hint ? Math.min(hint + 1, 15) : 2 ** attempt;
-      await new Promise((res) => setTimeout(res, wait * 1000));
-      continue;
+  const isStreamGen = path.startsWith(`models/${GEMINI_MODEL}:streamGenerateContent`);
+  const paths = isStreamGen ? FALLBACK_MODELS.map((m) => `models/${m}:streamGenerateContent`) : [path];
+  let lastErr: Error | null = null;
+  for (const p of paths) {
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(`${API}/${p}?alt=sse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+        body: JSON.stringify(body),
+      });
+      if (r.ok && r.body) return r;
+      const data = await r.json().catch(() => ({}));
+      const msg = String(data?.error?.message ?? JSON.stringify(data));
+      const perDay = /per day/i.test(msg);
+      lastErr = new Error(`Gemini ${r.status}: ${msg}`);
+      if (paths.length > 1 && p !== paths[paths.length - 1] && [404, 429, 500, 503].includes(r.status)) {
+        console.warn(`stream model ${p} failed (${r.status}), switching fallback`);
+        break;
+      }
+      if (attempt < 1 && [429, 500, 503].includes(r.status) && !perDay) {
+        const hint = Number(msg.match(/retry in ([\d.]+)s/)?.[1] ?? 0);
+        const wait = r.status === 429 && hint ? Math.min(hint + 1, 10) : 2 ** attempt;
+        await new Promise((res) => setTimeout(res, wait * 1000));
+        continue;
+      }
+      if (p === paths[paths.length - 1]) throw lastErr;
+      break;
     }
-    throw new Error(`Gemini ${r.status}: ${data?.error?.message ?? JSON.stringify(data)}`);
   }
+  throw lastErr ?? new Error("Gemini 串流失敗");
 }
 
 async function chat(
