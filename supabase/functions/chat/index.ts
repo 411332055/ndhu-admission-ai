@@ -36,7 +36,7 @@ const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
 const FALLBACK_MODELS = [GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.1-flash-lite"].filter((m, i, a) => a.indexOf(m) === i);
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
-const TOP_K = 5;
+const TOP_K = 4;
 const CANDIDATE_K = 8;
 const MIN_SIM = Number(Deno.env.get("MIN_SIMILARITY") ?? "0.62");
 const CHUNK_SIZE = 700;   // 每段字數（免費版向量額度每分鐘 100 次，段落大一點比較不會超過）
@@ -358,7 +358,7 @@ async function chat(
   if (!allowed) return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
 
   const cached = cachedRes?.data;
-  if (cached && Date.now() - Date.parse(cached.updated_at) < 6 * 3600_000 && cached.value?.answer) {
+  if (cached && Date.now() - Date.parse(cached.updated_at) < 48 * 3600_000 && cached.value?.answer) {
     const v = cached.value;
     const { data: logRow } = await sb.from("chat_logs").insert({
       question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
@@ -401,6 +401,21 @@ async function chat(
 
   const logQuestion = imgPart ? `[圖片] ${question}` : question;
 
+  // 省 token 捷徑：單純查詢平面圖／地圖且高分命中圖片時，直接秒回平面圖卡片（0 消耗 Gemini 生成額度）
+  const asksMapOnly = !imgPart && question.length <= 28 && /平面圖|地圖|配置圖/.test(question)
+    && !/怎麼申請|費用|多少錢|期限|時間|資格|學分|退學|減免|貸款|報到/.test(question);
+  if (asksMapOnly && hits?.length) {
+    const mapPick = pickSources(hits, "full", []);
+    if (mapPick.images.length) {
+      const names = mapPick.images.map((x) => `「${x.source}」`).join("、");
+      const answer = `已為你找到 ${names}！請直接點選下方平面圖放大檢視教室與空間位置。`;
+      const { data: logRow } = await sb.from("chat_logs").insert({
+        question: logQuestion, answer, sources: mapPick.sources, top_score: top, answered: true, status: "full", role,
+      }).select("id").single();
+      return json({ answer, sources: mapPick.sources, images: mapPick.images, internal: [], top_score: top, log_id: logRow?.id ?? null });
+    }
+  }
+
   if (!hits?.length && !imgPart) {
     const answer = staff
       ? "你問到一個很關鍵的問題！很抱歉，目前知識庫裡還沒有這項內部作業資料 🙇‍♂️\n\n如果之後處理完有心得或最新流程，非常歡迎到「分享經驗」分頁寫成筆記，審核後就會加入內部知識庫，幫之後的同事省下好多時間！"
@@ -413,11 +428,11 @@ async function chat(
 
   const ctx = hits.length
     ? hits.map((h: any, i: number) =>
-        `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${h.content}`).join("\n\n")
+        `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${String(h.content ?? "").slice(0, i === 0 ? 700 : 520)}`).join("\n\n")
     : "（知識庫暫無直接對應文字，請先判讀使用者上傳的圖片內容並誠實說明；涉及未記載的東華規定請勿自行編造，建議洽詢教務處綜合業務組 03-8906143。）";
   const contents: any[] = hist.slice(-4).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: String(m.content).slice(0, 1500) }],
+    parts: [{ text: String(m.content).slice(0, 300) }],
   }));
   const userParts: any[] = [];
   if (imgPart) userParts.push({ inlineData: imgPart });
@@ -426,7 +441,7 @@ async function chat(
   const reqBody = {
     systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
     contents,
-    generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+    generationConfig: { temperature: 0.3, maxOutputTokens: 640 },
   };
 
   // 串流模式：邊產生邊送到前端，不到 1 秒就會開始顯示文字
