@@ -16,3 +16,14 @@ https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/473025161.jpg | 理工三館�
 https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/376917898.jpg | 理工三館二樓平面圖
 https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/553155189.jpg | 理工三館三樓平面圖
 https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/459399475.jpg | 理工三館四樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/650/m/mczh-tw700x700_large4408_844850190758.jpg | 圖資大樓A棟圖書館一樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/162/m/mczh-tw700x700_large4409_70415090758.jpg | 圖資大樓A棟圖書館二樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/774/m/mczh-tw700x700_large4392_139248790758.jpg | 圖資大樓A棟圖書館三樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/173/m/mczh-tw700x700_large4393_230673390758.jpg | 圖資大樓A棟圖書館四樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/961/m/mczh-tw700x700_large4394_26821190758.jpg | 圖資大樓A棟圖書館五樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/833/m/mczh-tw700x700_large4395_945707690758.jpg | 圖資大樓A棟圖書館六樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/723/m/mczh-tw700x700_large4396_308031390758.jpg | 圖資大樓B棟資訊中心一樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/87/m/mczh-tw700x700_large4397_832225990758.jpg | 圖資大樓B棟資訊中心二樓平面圖
+https://lic.ndhu.edu.tw/var/file/7/1007/pictures/527/m/mczh-tw700x700_large4398_245059790758.jpg | 圖資大樓B棟資訊中心三樓平面圖
+https://rb006.ndhu.edu.tw/var/file/6/1006/pictures/76/m/mczh-tw1600x1600_large47693_466369845559.jpg | 行政大樓總務處各組位置平面圖（一）
+https://rb006.ndhu.edu.tw/var/file/6/1006/pictures/76/m/mczh-tw1600x1600_large49474_310308639438.png | 行政大樓總務處各組位置平面圖（二）

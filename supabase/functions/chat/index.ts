@@ -437,7 +437,12 @@ async function chat(
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("chat stream failed:", msg);
-      if (/Gemini (429|500|503)/.test(msg)) {
+      if (/Gemini (404|429|500|503)/.test(msg)) {
+        const fb = pickSources(hits, "partial", []);
+        if (fb.images.length) {
+          const fallbackAns = `已為你找到相關的平面圖資料（點擊下方圖片可放大檢視）！\n\n目前 AI 文字整理服務較為忙碌，先直接附上平面圖供你參考；若需要更詳細的規定說明，歡迎稍後再問，或洽詢東華大學教務處綜合業務組（03-8906143）。`;
+          return json({ answer: fallbackAns, sources: fb.sources, images: fb.images, internal: [], top_score: top, log_id: null });
+        }
         return json({ error: "目前詢問人數較多或系統暫時忙碌，請稍後再試；若有急需，請洽詢東華大學教務處綜合業務組（03-8906143）。" }, 503);
       }
       throw e;

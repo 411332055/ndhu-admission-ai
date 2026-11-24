@@ -49,7 +49,7 @@
       <select id="aud2" class="aud"><option value="public">公開</option><option value="staff">內部（只限行政人員）</option></select>
       <div class="row">
         <button class="primary" id="importUrls">匯入</button>
-        <button class="ghost" id="fillMaps" type="button" title="自動填入東華大學全校配置圖、管理學院與理工一～三館平面圖清單">🗺️ 填入教學樓平面圖清單</button>
+        <button class="ghost" id="fillMaps" type="button" title="一鍵快速匯入全校 29 張教學樓與館舍平面圖（不消耗 Gemini 對話額度）">🗺️ 一鍵極速匯入 29 張平面圖</button>
         <span class="status" id="urlStatus">PDF 或圖片由 Gemini 轉成文字，圖片會保留原圖供問答顯示</span>
       </div>
     </section>
@@ -365,29 +365,52 @@ async function importUrls() {
 
 $('login').onclick = login;
 $('importUrls').onclick = importUrls;
-$('fillMaps').onclick = () => {
-  $('urls').value = [
-    'https://www.ndhu.edu.tw/var/file/0/1000/img/NDHU_Map202509.jpg | 國立東華大學校園導覽平面圖',
-    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145194_0.jpg | 管理學院大樓平面圖（一）',
-    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145199_0.jpg | 管理學院大樓平面圖（二）',
-    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145198_0.jpg | 管理學院大樓平面圖（三）',
-    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145197_0.jpg | 管理學院大樓平面圖（四）',
-    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145196_0.jpg | 管理學院大樓平面圖（五）',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/758197030.png | 理工一館一樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/614988357.png | 理工一館二樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/140338647.png | 理工一館三樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/692353239.png | 理工一館四樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/897200554.jpg | 理工二館一樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/252871425.jpg | 理工二館二樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/795512523.jpg | 理工二館三樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/898123377.jpg | 理工二館四樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/473025161.jpg | 理工三館一樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/376917898.jpg | 理工三館二樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/553155189.jpg | 理工三館三樓平面圖',
-    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/459399475.jpg | 理工三館四樓平面圖',
-  ].join('\n');
-  $('aud2').value = 'public';
-  status('urlStatus', '已填入 18 張東華校園與教學樓平面圖，點「匯入」就會自動辨識文字並儲存原圖！', 'ok');
+$('fillMaps').onclick = async () => {
+  const maps = [
+    ['國立東華大學校園導覽平面圖', 'https://www.ndhu.edu.tw/var/file/0/1000/img/NDHU_Map202509.jpg', '國立東華大學壽豐校區最新全校校園導覽平面圖與配置圖（2025年9月版），標示各教學大樓、管理學院、理工一館、理工二館、理工三館、人社一館、人社二館、人社三館、花師教育學院、原住民民族學院、環境暨海洋學院、藝術學院、行政大樓、圖資大樓（圖書館）、學生活動中心、宿舍區、體育館與校內道路相對位置。'],
+    ['管理學院大樓平面圖（一）', 'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145194_0.jpg', '國立東華大學管理學院大樓平面圖（第1張，管院空間配置、教室位置、電梯與樓梯方向）。'],
+    ['管理學院大樓平面圖（二）', 'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145199_0.jpg', '國立東華大學管理學院大樓平面圖（第2張，管院樓層教室編號、研討室與系所辦公室位置）。'],
+    ['管理學院大樓平面圖（三）', 'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145198_0.jpg', '國立東華大學管理學院大樓平面圖（第3張，管院樓層教室、會議室與教師研究室位置）。'],
+    ['管理學院大樓平面圖（四）', 'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145197_0.jpg', '國立東華大學管理學院大樓平面圖（第4張，管院樓層教室、研究室與公共空間配置）。'],
+    ['管理學院大樓平面圖（五）', 'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145196_0.jpg', '國立東華大學管理學院大樓平面圖（第5張，管院高樓層空間與研究室平面配置）。'],
+    ['理工一館一樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/758197030.png', '國立東華大學理工學院理工一館一樓（1F）平面圖，包含理一1樓教室、講堂、實驗室與出入口配置。'],
+    ['理工一館二樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/614988357.png', '國立東華大學理工學院理工一館二樓（2F）平面圖，包含理一2樓教室、實驗室與系所空間配置。'],
+    ['理工一館三樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/140338647.png', '國立東華大學理工學院理工一館三樓（3F）平面圖，包含理一3樓教室、實驗室與研究室配置。'],
+    ['理工一館四樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/692353239.png', '國立東華大學理工學院理工一館四樓（4F）平面圖，包含理一4樓實驗室、研究室與教室配置。'],
+    ['理工二館一樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/897200554.jpg', '國立東華大學理工學院理工二館一樓（1F）平面圖，包含理二1樓教室、大講堂與實驗室位置。'],
+    ['理工二館二樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/252871425.jpg', '國立東華大學理工學院理工二館二樓（2F）平面圖，包含理二2樓教室、系辦與實驗室位置。'],
+    ['理工二館三樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/795512523.jpg', '國立東華大學理工學院理工二館三樓（3F）平面圖，包含理二3樓教室、實驗室與研究室位置。'],
+    ['理工二館四樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/898123377.jpg', '國立東華大學理工學院理工二館四樓（4F）平面圖，包含理二4樓實驗室與研究室位置。'],
+    ['理工三館一樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/473025161.jpg', '國立東華大學理工學院理工三館一樓（1F）平面圖，包含理三1樓教室、實驗室與大廳出入口配置。'],
+    ['理工三館二樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/376917898.jpg', '國立東華大學理工學院理工三館二樓（2F）平面圖，包含理三2樓教室、實驗室與空間配置。'],
+    ['理工三館三樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/553155189.jpg', '國立東華大學理工學院理工三館三樓（3F）平面圖，包含理三3樓教室、實驗室與研究室配置。'],
+    ['理工三館四樓平面圖', 'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/459399475.jpg', '國立東華大學理工學院理工三館四樓（4F）平面圖，包含理三4樓實驗室與研究室配置。'],
+    ['圖資大樓A棟圖書館一樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/650/m/mczh-tw700x700_large4408_844850190758.jpg', '國立東華大學圖資大樓A棟（圖書館）一樓（1F）平面圖暨逃生路線圖，包含大廳、借還書櫃台與閱覽空間。'],
+    ['圖資大樓A棟圖書館二樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/162/m/mczh-tw700x700_large4409_70415090758.jpg', '國立東華大學圖資大樓A棟（圖書館）二樓（2F）平面圖暨逃生路線圖，包含書庫與討論閱覽區。'],
+    ['圖資大樓A棟圖書館三樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/774/m/mczh-tw700x700_large4392_139248790758.jpg', '國立東華大學圖資大樓A棟（圖書館）三樓（3F）平面圖暨逃生路線圖，包含書區與研究小間。'],
+    ['圖資大樓A棟圖書館四樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/173/m/mczh-tw700x700_large4393_230673390758.jpg', '國立東華大學圖資大樓A棟（圖書館）四樓（4F）平面圖暨逃生路線圖，包含書庫與閱覽室。'],
+    ['圖資大樓A棟圖書館五樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/961/m/mczh-tw700x700_large4394_26821190758.jpg', '國立東華大學圖資大樓A棟（圖書館）五樓（5F）平面圖暨逃生路線圖，包含特藏書區與閱覽區。'],
+    ['圖資大樓A棟圖書館六樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/833/m/mczh-tw700x700_large4395_945707690758.jpg', '國立東華大學圖資大樓A棟（圖書館）六樓（6F）平面圖暨逃生路線圖，包含高樓層閱覽與典藏空間。'],
+    ['圖資大樓B棟資訊中心一樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/723/m/mczh-tw700x700_large4396_308031390758.jpg', '國立東華大學圖資大樓B棟（資訊中心）一樓（1F）平面圖暨逃生路線圖，包含電腦教室與資訊服務空間。'],
+    ['圖資大樓B棟資訊中心二樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/87/m/mczh-tw700x700_large4397_832225990758.jpg', '國立東華大學圖資大樓B棟（資訊中心）二樓（2F）平面圖暨逃生路線圖，包含電腦教室與行政辦公室。'],
+    ['圖資大樓B棟資訊中心三樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/527/m/mczh-tw700x700_large4398_245059790758.jpg', '國立東華大學圖資大樓B棟（資訊中心）三樓（3F）平面圖暨逃生路線圖，包含電腦教室與機房空間。'],
+    ['行政大樓總務處各組位置平面圖（一）', 'https://rb006.ndhu.edu.tw/var/file/6/1006/pictures/76/m/mczh-tw1600x1600_large47693_466369845559.jpg', '國立東華大學行政大樓總務處各組辦公室位置平面圖（事務組、出納組、營繕組、保管組等位置）。'],
+    ['行政大樓總務處各組位置平面圖（二）', 'https://rb006.ndhu.edu.tw/var/file/6/1006/pictures/76/m/mczh-tw1600x1600_large49474_310308639438.png', '國立東華大學行政大樓總務處各組辦公室位置平面圖（第二張，行政大樓樓層與各組位置指引）。'],
+  ];
+  $('fillMaps').disabled = true;
+  let ok = 0, fail = 0;
+  const existing = new Set(allSources.map(s => s.source));
+  for (const [i, [source, image_url, text]] of maps.entries()) {
+    if (existing.has(source)) { ok++; continue; }
+    status('urlStatus', `極速匯入中 ${i + 1}/${maps.length}：${source}…`);
+    try {
+      await api({ action: 'ingest', source, text, image_url, audience: 'public' });
+      ok++;
+    } catch (e) { fail++; console.error(source, e); }
+  }
+  status('urlStatus', `極速匯入完成：共 ${ok} 張可用${fail ? `，失敗 ${fail} 張` : '（全校 29 張平面圖已全部就位 🎉）'}`, fail ? 'err' : 'ok');
+  $('fillMaps').disabled = false;
+  loadSources();
 };
 $('key').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('upload').onclick = upload;
