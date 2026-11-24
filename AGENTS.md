@@ -88,7 +88,7 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 
 ## 部署
 
-使用者桌面有兩個捷徑（`tools/windows/`）：「開啟專案」會 git pull 後用 Antigravity 開啟；「一鍵部署」會 pull、commit、push 前端，再用 Supabase CLI 部署後端。改了部署方式要同步更新 `tools/windows/deploy.bat`。
+使用者桌面有一個「入學AI助理」捷徑，指向 `tools/windows/launcher.bat` 控制台選單：開啟專案（`open-project.bat`：git pull 後用 Antigravity 開啟）、一鍵部署（`deploy.bat`：pull、commit、push 前端，再用 Supabase CLI 部署後端）、開啟各網站。Supabase CLI 已在使用者電腦登入。改了部署方式要同步更新 `tools/windows/deploy.bat`。
 
 - 前端：改 `docs/` 後 commit、push 到 main 即可。
 - 後端：用 Supabase CLI
