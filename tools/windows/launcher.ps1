@@ -35,8 +35,11 @@ function Open-Project {
     return
   }
   $app = @($paths)[0]
-  if ($app -like '*.cmd') { Start-Process -FilePath $app -ArgumentList "`"$repo`"" -WindowStyle Hidden }
-  else { Start-Process -FilePath $app -ArgumentList "`"$repo`"" }
+  # Antigravity 會把自己的紀錄印到開啟它的視窗，導向到暫存檔，控制台才不會被洗版
+  $log = Join-Path $env:TEMP 'antigravity-launch'
+  $opts = @{ FilePath = $app; ArgumentList = "`"$repo`""; RedirectStandardOutput = "$log.out.txt"; RedirectStandardError = "$log.err.txt" }
+  if ($app -like '*.cmd') { $opts.WindowStyle = 'Hidden' }
+  Start-Process @opts
   Write-Host '已用 Antigravity 開啟專案。' -ForegroundColor Green
   Start-Sleep -Seconds 2
 }
