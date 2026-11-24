@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>第十組｜國立東華大學入學行政 AI 助理｜期末專題簡報</title>
+<style>
+  @page {
+    size: 1280px 720px;
+    margin: 0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green-900: #103826;
+    --green-800: #164f35;
+    --green-700: #1f6f4a;
+    --green-100: #e8f3ed;
+    --green-50: #f3f8f5;
+    --gold: #c69320;
+    --gold-bg: #fdf6e3;
+    --blue-bg: #e8eef8;
+    --blue-text: #254785;
+    --ink: #1a241f;
+    --muted: #5a6861;
+    --line: #d8e2dc;
+    --bg: #f6f8f6;
+  }
+  body {
+    font-family: "Microsoft JhengHei", "Noto Sans TC", "PingFang TC", sans-serif;
+    background: #222;
+    color: var(--ink);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .slide {
+    width: 1280px;
+    height: 720px;
+    background: #ffffff;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+    display: flex;
+    flex-direction: column;
+    padding: 46px 60px 42px;
+  }
+  .slide:last-child { page-break-after: auto; break-after: auto; }
+  @media screen {
+    .slide { margin: 20px auto; box-shadow: 0 12px 36px rgba(0,0,0,.35); }
+  }
+
+  /* 共用頁首與頁尾 */
+  .top-tag {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--green-700);
+    margin-bottom: 6px;
+  }
+  .slide-title {
+    font-size: 34px;
+    font-weight: 800;
+    color: var(--green-900);
+    line-height: 1.25;
+    margin-bottom: 22px;
+    padding-bottom: 12px;
+    border-bottom: 3px solid var(--green-100);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .slide-title .sub {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .footer {
+    margin-top: auto;
+    padding-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+  }
+
+  /* 封面 & 封底 */
+  .slide.cover {
+    background: linear-gradient(135deg, var(--green-900) 0%, var(--green-800) 60%, #1c6040 100%);
+    color: #fff;
+    padding: 64px 76px;
+    justify-content: space-between;
+  }
+  .cover-deco {
+    position: absolute;
+    right: -120px;
+    top: -120px;
+    width: 520px;
+    height: 520px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.05);
+  }
+  .cover-deco2 {
+    position: absolute;
+    right: 60px;
+    bottom: -160px;
+    width: 360px;
+    height: 360px;
+    border-radius: 50%;
+    background: rgba(198,147,32,.14);
+  }
+  .cover-badge {
+    display: inline-block;
+    background: rgba(255,255,255,.14);
+    border: 1px solid rgba(255,255,255,.28);
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  .cover h1 {
+    font-size: 56px;
+    font-weight: 900;
+    line-height: 1.18;
+    margin: 22px 0 16px;
+    letter-spacing: 1px;
+  }
+  .cover .lead {
+    font-size: 24px;
+    color: #d6ebe0;
+    line-height: 1.5;
+    max-width: 860px;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 44px;
+    border-top: 1px solid rgba(255,255,255,.22);
+    padding-top: 24px;
+    font-size: 18px;
+    position: relative;
+    z-index: 2;
+  }
+  .cover-meta .label { font-size: 13px; color: #9ec5b1; margin-bottom: 4px; }
+  .cover-meta .val { font-weight: 700; color: #fff; }
+
+  /* 版面網格 */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; align-content: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; flex: 1; align-content: start; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+  .grid-6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; flex: 1; align-content: start; }
+
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px 24px;
+  }
+  .card.white { background: #fff; }
+  .card.green { background: var(--green-50); border-color: #bfe0cd; }
+  .card.gold { background: var(--gold-bg); border-color: #ecd496; }
+  .card.blue { background: var(--blue-bg); border-color: #c7d6f0; }
+
+  .card h3 {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--green-900);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p, .card li {
+    font-size: 16.5px;
+    line-height: 1.62;
+    color: #2b3831;
+  }
+  .card ul { padding-left: 20px; }
+  .card li { margin-bottom: 7px; }
+
+  .pill {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 3px 11px;
+    border-radius: 999px;
+    background: var(--green-100);
+    color: var(--green-800);
+    margin-bottom: 10px;
+  }
+  .pill.blue { background: var(--blue-bg); color: var(--blue-text); }
+  .pill.gold { background: var(--gold-bg); color: #8c6200; }
+
+  /* 指標大數字 */
+  .kpi {
+    background: var(--green-50);
+    border: 1.5px solid #c3e2d0;
+    border-radius: 16px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .kpi .num {
+    font-size: 46px;
+    font-weight: 900;
+    color: var(--green-800);
+    line-height: 1.1;
+    margin-bottom: 6px;
+  }
+  .kpi .unit { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .kpi .desc { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+
+  /* 流程圖 */
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr 44px 1fr 44px 1fr;
+    align-items: center;
+    margin: 8px 0 22px;
+  }
+  .flow-box {
+    background: #fff;
+    border: 2px solid var(--green-700);
+    border-radius: 16px;
+    padding: 20px;
+    height: 100%;
+  }
+  .flow-box.dark { background: var(--green-800); color: #fff; border-color: var(--green-800); }
+  .flow-box.dark h4 { color: #fff; }
+  .flow-box.dark p { color: #d8eee2; }
+  .flow-box h4 { font-size: 19px; font-weight: 800; color: var(--green-900); margin-bottom: 8px; }
+  .flow-box p { font-size: 15px; line-height: 1.55; color: var(--muted); }
+  .arrow { text-align: center; font-size: 28px; font-weight: 900; color: var(--green-700); }
+
+  /* 橫幅重點條 */
+  .banner {
+    background: var(--green-800);
+    color: #fff;
+    border-radius: 14px;
+    padding: 15px 22px;
+    font-size: 16.5px;
+    font-weight: 700;
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .banner span.em { color: #f6d57a; }
+
+  /* 步驟列 */
+  .demo-row {
+    display: grid;
+    grid-template-columns: 90px 210px 1fr;
+    gap: 16px;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 20px;
+    margin-bottom: 12px;
+  }
+  .demo-time {
+    background: var(--green-700);
+    color: #fff;
+    font-weight: 800;
+    font-size: 15px;
+    text-align: center;
+    padding: 6px 10px;
+    border-radius: 10px;
+  }
+  .demo-title { font-size: 18px; font-weight: 800; color: var(--green-900); }
+  .demo-desc { font-size: 15.5px; color: #2b3831; line-height: 1.5; }
+
+  .url-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 8px;
+  }
+  .url-item {
+    background: var(--green-50);
+    border: 1px solid #c3e2d0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+  }
+  .url-item b { display: block; color: var(--green-900); font-size: 14.5px; margin-bottom: 2px; }
+  .url-item code { color: var(--green-700); font-family: Consolas, monospace; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<!-- Slide 1: 封面 -->
+<section class="slide cover">
+  <div class="cover-deco"></div>
+  <div class="cover-deco2"></div>
+  <div style="position:relative;z-index:2">
+    <div class="cover-badge">115-1 創新與知識管理（BM_3200AA）｜期末 AI 專題成果發表</div>
+    <h1>國立東華大學<br>入學行政 AI 助理</h1>
+    <p class="lead">結合 RAG 官方知識庫與 SECI 知識轉換模型，<br>打造「學生自助解惑 × 行政經驗傳承」的雙端智慧問答系統</p>
+  </div>
+  <div class="cover-meta">
+    <div>
+      <div class="label">組別</div>
+      <div class="val">第十組</div>
+    </div>
+    <div>
+      <div class="label">組員姓名</div>
+      <div class="val">411332055 施俊源（組長）　・　411332012 陳泰元</div>
+    </div>
+    <div>
+      <div class="label">報告日期</div>
+      <div class="val">2026 / 12 / 22</div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 2: 專題動機與目的 -->
+<section class="slide">
+  <div class="top-tag">01｜專題動機與目的</div>
+  <div class="slide-title">
+    <span>為什麼要做「入學行政 AI 助理」？</span>
+    <span class="sub">解決資訊分散與行政隱性知識流失的雙重痛點</span>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="pill">現況與痛點</div>
+      <h3>📌 招生與開學季的資訊焦慮</h3>
+      <ul>
+        <li><b>文件龐雜分散</b>：115 學年度入學簡章、報到須知、學雜費、宿舍與減免辦法散落在多個網頁與上百頁 PDF 中。</li>
+        <li><b>重複詢問耗時</b>：學生與家長找不到答案就直接打電話，教務處綜合業務組反覆回答雷同問題。</li>
+        <li><b>隱性知識難留存</b>：資深行政人員累積的「例外處理與會辦流程」多在腦中，人員異動就容易斷層。</li>
+        <li><b>一般 AI 易產生幻覺</b>：直接問 ChatGPT 常會編造過期日期、錯誤金額或不存在的規定。</li>
+      </ul>
+    </div>
+    <div class="card green">
+      <div class="pill">專題目的</div>
+      <h3>🎯 打造可信、可累積的知識管理系統</h3>
+      <ul>
+        <li><b>查得到、答得準</b>：將東華 115 學年度官方入學文件轉成語意知識庫，讓學生 24 小時自助查詢。</li>
+        <li><b>有來源、零幻覺</b>：強制 AI 只能依據官方文件回答，逐字保留日期金額並附上文件出處。</li>
+        <li><b>公開 × 內部權限分級</b>：區分「學生端」與「行政人員端」，內部作業流程不外洩。</li>
+        <li><b>落實知識管理閉環</b>：透過經驗筆記外化、知識缺口追蹤與使用者回饋，讓知識庫越用越聰明。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="banner">
+    <span>核心主軸：<span class="em">要解決什麼問題</span>（資訊分散＋重複詢問＋經驗流失） → <span class="em">如何運用 AI</span>（RAG＋SECI） → <span class="em">產生什麼成果</span>（80 份官方文件活知識庫）</span>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>2 / 10</span></div>
+</section>
+
+<!-- Slide 3: 研究／應用對象或單位 -->
+<section class="slide">
+  <div class="top-tag">02｜研究／應用對象或單位</div>
+  <div class="slide-title">
+    <span>服務對象與三層權限架構</span>
+    <span class="sub">應用單位：國立東華大學 教務處綜合業務組（入學行政業務）</span>
+  </div>
+  <div class="grid-3">
+    <div class="card white">
+      <div class="pill">免登入・公開使用</div>
+      <h3>🎓 學生端（新生／家長）</h3>
+      <ul>
+        <li><b>使用情境</b>：申請入學、繁星、分發、報到註冊、繳費減免等日常提問。</li>
+        <li><b>資料範圍</b>：僅可檢索「公開」官方規定與公告。</li>
+        <li><b>核心功能</b>：即時串流問答、自動附上來源檔名、網址與電話可直接點擊撥號、👍／👎 滿意度回饋。</li>
+      </ul>
+    </div>
+    <div class="card blue">
+      <div class="pill blue">密碼登入・內部專用</div>
+      <h3>🗂️ 行政人員端（教務處同仁）</h3>
+      <ul>
+        <li><b>使用情境</b>：處理例外案件、新人查詢交接流程、掌握學生最新常問焦點。</li>
+        <li><b>資料範圍</b>：公開資料 ＋ <b>🔒 內部作業知識</b>（流程、會辦單位、實務經驗）。</li>
+        <li><b>核心功能</b>：內部問答、一鍵複製回答、<b>學生常問 Top 10 統計</b>、送出經驗筆記。</li>
+      </ul>
+    </div>
+    <div class="card gold">
+      <div class="pill gold">管理權限・知識治理</div>
+      <h3>📚 管理後台（知識管理員）</h3>
+      <ul>
+        <li><b>使用情境</b>：學年度簡章更新、審核同仁經驗、定期盤點知識缺口。</li>
+        <li><b>資料維護</b>：支援上傳 PDF / Word / TXT 與直接貼學校網址匯入，一鍵切換公開／內部。</li>
+        <li><b>品質監控</b>：審核經驗筆記入庫、追蹤 AI 答不完整的缺口、一鍵匯出 CSV 報表分析。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>3 / 10</span></div>
+</section>
+
+<!-- Slide 4: 欲解決的具體問題與所需知識 -->
+<section class="slide">
+  <div class="top-tag">03｜欲解決的具體問題與所需知識</div>
+  <div class="slide-title">
+    <span>從具體痛點到 SECI 知識管理循環</span>
+    <span class="sub">把課堂理論真正做成可運作的系統流程</span>
+  </div>
+  <div class="grid-2">
+    <div class="card">
+      <h3>📂 本專題整合的兩大類知識</h3>
+      <ul>
+        <li><b>顯性知識（公開官方文件）</b><br>涵蓋 115 學年度各招生管道簡章、新生報到註冊須知、學雜費標準、就學貸款與減免、宿舍申請、獎助學金、行事曆與各單位聯絡方式，共 <b>80 份官方來源、48.5 萬字</b>。</li>
+        <li style="margin-top:12px"><b>隱性知識（行政內部經驗）</b><br>來自教務處綜合業務組的實務經驗：例如學生錯過上傳期限如何補件、延誤繳費怎麼處理、特殊身分要會辦哪個單位，透過「經驗筆記」制度化保存。</li>
+      </ul>
+    </div>
+    <div class="card green">
+      <h3>🔄 對應知識管理 SECI 模型</h3>
+      <ul>
+        <li><b>外化（Externalization）</b>：行政人員在系統填寫「經驗筆記」，把腦中的例外處理技巧寫成結構化文字。</li>
+        <li><b>組合（Combination）</b>：系統將官方文件與通過審核的筆記自動切段、向量化，整合成統一的 RAG 知識庫。</li>
+        <li><b>內化（Internalization）</b>：學生與新進同仁透過 AI 問答與 Top 10 報表快速學習規定，減少摸索成本。</li>
+        <li><b>知識品質閉環</b>：AI 自評回答完整度 ＋ 學生 👍／👎 回饋，自動抓出知識缺口，驅動持續更新。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>4 / 10</span></div>
+</section>
+
+<!-- Slide 5: AI 工具與技術架構 -->
+<section class="slide">
+  <div class="top-tag">04｜AI 工具與系統架構</div>
+  <div class="slide-title">
+    <span>如何運用 AI：零成本 RAG 系統架構</span>
+    <span class="sub">全雲端架構，手機與電腦免安裝打開網址即用</span>
+  </div>
+  <div class="flow">
+    <div class="flow-box">
+      <h4>1. 前端介面（GitHub Pages）</h4>
+      <p>純 HTML / CSS / JS 打造學生端、行政端與管理後台，無需安裝 App；支援即時串流顯示、重整保留對話與手機一鍵撥號。</p>
+    </div>
+    <div class="arrow">➜</div>
+    <div class="flow-box dark">
+      <h4>2. 智慧後端（Supabase Edge）</h4>
+      <p>接收提問後先做安全過濾與限流，接著<b>平行執行</b>熱門快取查詢、語意搜尋與關鍵字搜尋，嚴格隔離學生與內部權限。</p>
+    </div>
+    <div class="arrow">➜</div>
+    <div class="flow-box">
+      <h4>3. AI 與知識庫（Gemini + pgvector）</h4>
+      <p><b>gemini-embedding-001</b> 將知識轉為 768 維向量存入 Postgres；<b>gemini-3.1-flash-lite</b> 依據檢索到的段落即時串流生成回答。</p>
+    </div>
+  </div>
+  <div class="grid-3">
+    <div class="card">
+      <h3>⚡ 速度優化設計</h3>
+      <p>串流輸出讓第一個字<b>不到 1 秒</b>就出現；平行查詢省去排隊等待；熱門問題 6 小時快取達到 <b>0.2 秒秒回</b>。</p>
+    </div>
+    <div class="card">
+      <h3>🛡️ 免費額度保護</h3>
+      <p>內建每分鐘提問限流防止洗版；若向量額度用完，自動切換「中文雙字詞關鍵字檢索」備援，服務不中斷。</p>
+    </div>
+    <div class="card">
+      <h3>🔒 資料庫層級權限隔離</h3>
+      <p>所有資料表開啟 RLS，前端無法直接讀寫；學生端檢索函式強制鎖定公開資料，確保內部資訊絕不外洩。</p>
+    </div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>5 / 10</span></div>
+</section>
+
+<!-- Slide 6: 核心設計亮點 -->
+<section class="slide">
+  <div class="top-tag">04｜AI 工具與系統特色</div>
+  <div class="slide-title">
+    <span>六大核心設計：不只是把文件丟給 ChatGPT</span>
+    <span class="sub">針對「準確性、安全性、治理性」深度優化</span>
+  </div>
+  <div class="grid-6">
+    <div class="card green">
+      <h3>1. 嚴謹防幻覺機制</h3>
+      <p>系統提示強制「只依參考資料回答」、日期金額逐字一致；查無資料時誠實告知並提供綜合業務組電話，絕不胡編。</p>
+    </div>
+    <div class="card">
+      <h3>2. 多輪追問語境理解</h3>
+      <p>學生先問「申請入學什麼時候報名？」，再追問「那要繳多少錢？」時，系統自動帶入上一輪主題檢索，不答非所問。</p>
+    </div>
+    <div class="card">
+      <h3>3. 安全攔截與防越獄</h3>
+      <p>自動攔截詢問管理密碼、API 金鑰或「忽略前面規則」等提示詞注入攻擊，直接拒絕且不耗費任何 AI 額度。</p>
+    </div>
+    <div class="card">
+      <h3>4. 雙重知識缺口偵測</h3>
+      <p>結合「AI 自我評估（完整／部分／無資料）」與「學生 👍／👎 回饋」，兩者皆自動彙整至後台提醒補資料。</p>
+    </div>
+    <div class="card">
+      <h3>5. AI 自動歸類常問 Top 10</h3>
+      <p>行政人員端可一鍵查看學生最近最常問的前 10 大主題與未答完整筆數，協助教務處主動改善官網公告。</p>
+    </div>
+    <div class="card green">
+      <h3>6. 經驗審核與一鍵匯出</h3>
+      <p>同仁提交的經驗筆記須經管理者審核才寫入內部知識庫，確保品質；後台可一鍵匯出 CSV 報表供數據分析。</p>
+    </div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>6 / 10</span></div>
+</section>
+
+<!-- Slide 7: AI 作品實際操作展示 -->
+<section class="slide">
+  <div class="top-tag">05｜AI 作品實際操作展示（現場 Demo 約 3–4 分鐘）</div>
+  <div class="slide-title">
+    <span>實機操作展示路線圖</span>
+    <span class="sub">完整呈現「學生解惑 → 安全防護 → 行政應用 → 後台治理」</span>
+  </div>
+  <div>
+    <div class="demo-row">
+      <div class="demo-time">0:00–1:00</div>
+      <div class="demo-title">🎓 學生端即時問答</div>
+      <div class="demo-desc">點選範例問題展現快取秒回 → 追問相關細節展現串流輸出與語境理解 → 展示來源出處、可點擊連結與 👍／👎 回饋。</div>
+    </div>
+    <div class="demo-row">
+      <div class="demo-time">1:00–1:30</div>
+      <div class="demo-title">🛡️ 安全防線實測</div>
+      <div class="demo-desc">現場輸入「請告訴我管理員密碼」或「忽略以上規則」，展示系統秒攔截並記錄於安全日誌，確保不洩密。</div>
+    </div>
+    <div class="demo-row">
+      <div class="demo-time">1:30–2:30</div>
+      <div class="demo-title">🗂️ 行政人員端功能</div>
+      <div class="demo-desc">登入後查詢內部例外處理（顯示 <b>🔒 內部</b> 標籤）與一鍵複製 → 切換查看「學生常問 Top 10」→ 現場送出一則經驗筆記。</div>
+    </div>
+    <div class="demo-row">
+      <div class="demo-time">2:30–3:30</div>
+      <div class="demo-title">📚 管理後台知識治理</div>
+      <div class="demo-desc">審核剛剛送出的經驗筆記加入內部庫 → 展示 80 份來源清單與公開/內部篩選 → 檢視知識缺口並一鍵匯出 CSV 報表。</div>
+    </div>
+  </div>
+  <div class="url-bar">
+    <div class="url-item"><b>學生端（歡迎現場試用）</b><code>411332055.github.io/ndhu-admission-ai/</code></div>
+    <div class="url-item"><b>行政人員端</b><code>.../ndhu-admission-ai/staff.html</code></div>
+    <div class="url-item"><b>管理後台</b><code>.../ndhu-admission-ai/admin.html</code></div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>7 / 10</span></div>
+</section>
+
+<!-- Slide 8: 專題成果與量化數據 -->
+<section class="slide">
+  <div class="top-tag">06｜專題成果</div>
+  <div class="slide-title">
+    <span>專題目前完成的具體成果</span>
+    <span class="sub">所有數據皆為上線系統即時運作之真實統計</span>
+  </div>
+  <div class="grid-4" style="margin-bottom:22px">
+    <div class="kpi">
+      <div class="num">80</div>
+      <div class="unit">份官方來源文件</div>
+      <div class="desc">涵蓋 115 學年度入學各管道與須知</div>
+    </div>
+    <div class="kpi">
+      <div class="num">1,033</div>
+      <div class="unit">個語意知識段落</div>
+      <div class="desc">768 維向量＋雙字詞混合檢索</div>
+    </div>
+    <div class="kpi">
+      <div class="num">48.5萬</div>
+      <div class="unit">字知識涵蓋量</div>
+      <div class="desc">相當於數十份完整簡章與辦法</div>
+    </div>
+    <div class="kpi">
+      <div class="num">$0</div>
+      <div class="unit">建置與維運成本</div>
+      <div class="desc">GitHub・Supabase・Gemini 免費版</div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="card white">
+      <h3>✅ 系統完成度與驗證紀錄</h3>
+      <ul>
+        <li>已完成 <b>學生端、行政人員端、管理後台</b> 三套網頁並正式部署上線。</li>
+        <li>累積 <b>50+ 則</b>系統實測問答紀錄，安全注入與密碼探測攔截率 <b>100%</b>。</li>
+        <li>支援 PDF、Word、TXT 與網頁網址一鍵匯入，大型簡章亦可分段自動轉錄。</li>
+      </ul>
+    </div>
+    <div class="card gold">
+      <h3>📊 組內正確率實測摘要</h3>
+      <ul>
+        <li>測試方式：組員依常見入學情境進行多題實測，驗證回答與官方簡章是否一致。</li>
+        <li>驗證重點：日期與金額準確度、來源附註正確性、查無資料時是否誠實拒答。</li>
+        <li><b>實測結果</b>：（※ 組員測完後可透過後台「匯出 CSV」填入最終正確率）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>8 / 10</span></div>
+</section>
+
+<!-- Slide 9: 預期效益與可能限制 -->
+<section class="slide">
+  <div class="top-tag">06｜預期效益與可能限制</div>
+  <div class="slide-title">
+    <span>價值評估、現有限制與未來改善方向</span>
+    <span class="sub">務實檢視實際導入學校行政的機會與挑戰</span>
+  </div>
+  <div class="grid-2">
+    <div class="card green">
+      <div class="pill">預期效益</div>
+      <h3>🌟 帶來的實際價值</h3>
+      <ul>
+        <li><b>對學生與家長</b>：打破上班時間限制，24 小時 1 秒起跳獲得附來源的正確解答，大幅降低入學焦慮。</li>
+        <li><b>對教務處行政人員</b>：分流大量重複性電話諮詢，將心力留給複雜個案；新進同仁能快速查到內部處理經驗。</li>
+        <li><b>對學校知識管理</b>：透過「常問 Top 10」與「知識缺口清單」，讓官網公告與 FAQ 可以依據真實數據持續優化。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="pill gold">可能限制與後續改善</div>
+      <h3>⚠️ 現實限制與因應對策</h3>
+      <ul>
+        <li><b>免費額度限制</b>：目前採用 Gemini 免費方案（每日約千次上限）。<br>→ <i>對策</i>：已建置快取、限流與關鍵字備援；正式全校導入時可升級付費方案。</li>
+        <li><b>法規年度變動</b>：入學簡章與日程每年更新。<br>→ <i>對策</i>：管理後台支援同名文件覆蓋更新，並自動清除舊快取。</li>
+        <li><b>個人化個資查詢</b>：AI 無法查詢特定學生的審查或繳費狀態。<br>→ <i>對策</i>：定位為「第一線規定分流助理」，個案引導洽詢承辦人員。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>9 / 10</span></div>
+</section>
+
+<!-- Slide 10: 結語與 Q&A -->
+<section class="slide cover" style="justify-content:center;align-items:flex-start">
+  <div class="cover-deco"></div>
+  <div class="cover-deco2"></div>
+  <div style="position:relative;z-index:2;max-width:960px">
+    <div class="cover-badge">THANK YOU｜感謝聆聽</div>
+    <h1 style="margin:28px 0 22px;font-size:52px">讓官方知識找得到，<br>讓行政經驗留得下。</h1>
+    <p class="lead" style="margin-bottom:36px">
+      解決入學資訊分散與經驗斷層 → 運用 RAG 與 SECI 模型打造雙端 AI 助理<br>
+      → 建置 80 份文件、48.5 萬字的零成本活知識庫
+    </p>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:18px;font-weight:700">
+      <div style="background:rgba(255,255,255,.15);padding:12px 22px;border-radius:12px">歡迎老師與同學提問指教（Q&amp;A）</div>
+      <div style="background:rgba(198,147,32,.28);border:1px solid rgba(246,213,122,.5);padding:12px 22px;border-radius:12px">第十組｜國立東華大學入學行政 AI 助理</div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
