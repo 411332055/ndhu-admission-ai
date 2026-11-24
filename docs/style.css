@@ -273,12 +273,91 @@ body.staff .msg.bot::before {
   letter-spacing: -0.01em;
 }
 .welcome .sub { font-size: .92rem; color: var(--muted); }
+.cat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 20px;
+}
+.cat-tab {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .18s ease;
+  box-shadow: var(--shadow-sm);
+}
+.cat-tab:hover:not(.on) {
+  border-color: var(--green);
+  color: var(--green-dark);
+  background: var(--green-tint);
+}
+.cat-tab.on {
+  background: linear-gradient(135deg, var(--green-light), var(--green));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(27, 107, 70, 0.24);
+}
+.cat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+.cat-pill {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .16s ease;
+}
+.cat-pill:hover:not(.on) {
+  border-color: var(--green);
+  color: var(--green-dark);
+  background: var(--green-tint);
+}
+.cat-pill.on {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.cat-pill .cnt {
+  opacity: .75;
+  font-size: .74rem;
+  margin-left: 3px;
+}
+.cat-badge {
+  display: inline-block;
+  font-size: .72rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--green-tint);
+  color: var(--green-dark);
+  border: 1px solid rgba(27, 107, 70, 0.14);
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.cat-badge.map { background: #e8f4fd; color: #165a8a; border-color: #c5e2f8; }
+.cat-badge.fee { background: #fff6e0; color: #8c5a00; border-color: #f3ddb0; }
+.cat-badge.life { background: #f3ecfa; color: #5b2d8a; border-color: #decbf2; }
+.cat-badge.staff { background: #e8eef8; color: #2b4c86; border-color: #c9d6ee; }
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
-  margin-top: 22px;
+  margin-top: 14px;
 }
 .chip {
   border: 1px solid rgba(27, 107, 70, 0.18);

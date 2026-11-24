@@ -18,11 +18,17 @@
     <div class="welcome" id="welcome">
       <div class="welcome-badge">🎓</div>
       <h2>有什麼入學問題想問？</h2>
-      <div class="sub">申請入學、報到、註冊繳費、宿舍與獎助學金……都可以問我</div>
-      <div class="chips">
+      <div class="sub">選擇下方主題快速提問，或直接輸入問題／貼上截圖</div>
+      <div class="cat-tabs" id="catTabs">
+        <button type="button" class="cat-tab on" data-cat="admission">📝 招生與報到</button>
+        <button type="button" class="cat-tab" data-cat="fee">💰 學費與補助</button>
+        <button type="button" class="cat-tab" data-cat="map">🗺️ 教學樓與地圖</button>
+        <button type="button" class="cat-tab" data-cat="life">🏠 宿舍與生活</button>
+      </div>
+      <div class="chips" id="welcomeChips">
         <button class="chip">申請入學有幾個階段？</button>
         <button class="chip">新生報到要準備什麼？</button>
-        <button class="chip">學雜費可以怎麼繳？</button>
+        <button class="chip">忘記上傳畢業證書怎麼辦？</button>
       </div>
     </div>
   </main>
@@ -213,8 +219,23 @@ async function ask(question) {
   }
 }
 
+const WELCOME_CATS = {
+  admission: ['申請入學有幾個階段？', '新生報到要準備什麼？', '忘記上傳畢業證書怎麼辦？'],
+  fee: ['學雜費可以怎麼繳？', '就學貸款怎麼申請？', '學雜費減免與獎學金資格？'],
+  map: ['東華校園導覽平面圖', '管理學院平面圖', '理工二館三樓平面圖', '圖書館三樓平面圖'],
+  life: ['新生宿舍怎麼申請與進住？', '新生體檢要注意什麼？', '怎麼從志學火車站到東華？'],
+};
 function bindChips() {
   chat.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+  chat.querySelectorAll('.cat-tab').forEach(tab => tab.addEventListener('click', () => {
+    chat.querySelectorAll('.cat-tab').forEach(x => x.classList.toggle('on', x === tab));
+    const list = WELCOME_CATS[tab.dataset.cat] || WELCOME_CATS.admission;
+    const box = chat.querySelector('#welcomeChips');
+    if (box) {
+      box.innerHTML = list.map(q => `<button class="chip">${esc(q)}</button>`).join('');
+      box.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+    }
+  }));
 }
 document.getElementById('newChat').addEventListener('click', e => {
   e.preventDefault();

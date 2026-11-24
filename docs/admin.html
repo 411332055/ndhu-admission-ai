@@ -62,6 +62,7 @@
         </span>
       </h2>
       <div class="status" id="srcSummary"></div>
+      <div class="cat-bar" id="srcCatBar"></div>
       <div class="filter-bar">
         <input type="text" id="srcSearch" placeholder="搜尋來源名稱…">
         <select id="srcFilter" class="aud">
@@ -130,6 +131,24 @@ async function api(body) {
 }
 
 let allSources = [];
+let curCat = 'all';
+const SRC_CATS = [
+  { id: 'all', label: '全部', cls: '' },
+  { id: 'map', label: '🗺️ 平面圖／地圖', cls: 'map' },
+  { id: 'admission', label: '📝 招生與入學', cls: '' },
+  { id: 'fee', label: '💰 學費與獎助', cls: 'fee' },
+  { id: 'life', label: '🏠 宿舍與生活', cls: 'life' },
+  { id: 'staff', label: '🔒 內部與經驗', cls: 'staff' },
+  { id: 'other', label: '📄 其他文件', cls: '' },
+];
+function classifySource(s) {
+  if (s.audience === 'staff' || /行政經驗|內部/.test(s.source)) return 'staff';
+  if (/平面圖|地圖|配置圖|樓層/.test(s.source)) return 'map';
+  if (/學雜費|繳費|貸款|學貸|減免|獎學金|獎助|補助|弱勢|退費/.test(s.source)) return 'fee';
+  if (/宿舍|住宿|體檢|健檢|兵役|交通|接駁|選課|學則|行事曆|休學|轉系|健康檢查|生活/.test(s.source)) return 'life';
+  if (/申請入學|繁星|分發|轉學|甄試|招生|簡章|入學|報到|註冊|新生|應試|面試/.test(s.source)) return 'admission';
+  return 'other';
+}
 function renderSources() {
   const kw = $('srcSearch').value.trim().toLowerCase();
   const f = $('srcFilter').value;
@@ -137,14 +156,32 @@ function renderSources() {
   const pub = allSources.filter(x => x.audience !== 'staff').length;
   const stf = allSources.length - pub;
   status('srcSummary', `共 ${allSources.length} 份來源（公開 ${pub}、內部 ${stf}），合計 ${totalChunks} 段。`);
+
+  const counts = { all: allSources.length };
+  for (const s of allSources) {
+    const c = classifySource(s);
+    counts[c] = (counts[c] || 0) + 1;
+  }
+  const catMap = Object.fromEntries(SRC_CATS.map(c => [c.id, c]));
+  $('srcCatBar').innerHTML = SRC_CATS
+    .filter(c => c.id === 'all' || counts[c.id])
+    .map(c => `<button type="button" class="cat-pill ${curCat === c.id ? 'on' : ''}" data-cat="${c.id}">${c.label}<span class="cnt">(${counts[c.id] || 0})</span></button>`)
+    .join('');
+  $('srcCatBar').querySelectorAll('.cat-pill').forEach(b => b.onclick = () => {
+    curCat = b.dataset.cat;
+    renderSources();
+  });
+
   const list = allSources
-    .filter(s => (f === 'all' || s.audience === f) && (!kw || s.source.toLowerCase().includes(kw)))
+    .filter(s => (f === 'all' || s.audience === f) && (curCat === 'all' || classifySource(s) === curCat) && (!kw || s.source.toLowerCase().includes(kw)))
     .sort((a, b) => b.updated.localeCompare(a.updated));
-  $('srcList').innerHTML = list.length ? list.map(s =>
-    `<tr><td>${esc(s.source)}</td>
+  $('srcList').innerHTML = list.length ? list.map(s => {
+    const c = catMap[classifySource(s)] || catMap.other;
+    return `<tr><td><span class="cat-badge ${c.cls}">${c.label}</span>${esc(s.source)}</td>
      <td><button class="ghost aud-btn ${s.audience === 'staff' ? 'staff' : ''}" data-aud="${esc(s.source)}" data-cur="${s.audience}" title="點一下切換">${s.audience === 'staff' ? '🔒 內部' : '公開'}</button></td>
      <td>${s.chunks}</td><td>${fmt(s.updated)}</td>
-     <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`).join('')
+     <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`;
+  }).join('')
     : `<tr><td colspan="5" class="status">${allSources.length ? '沒有符合條件的來源' : '知識庫目前是空的'}</td></tr>`;
   document.querySelectorAll('[data-aud]').forEach(b => b.onclick = async () => {
     const to = b.dataset.cur === 'staff' ? 'public' : 'staff';
