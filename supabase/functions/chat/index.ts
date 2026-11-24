@@ -20,8 +20,17 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const ADMIN_KEY = Deno.env.get("ADMIN_KEY") ?? "";
 const STAFF_KEY = Deno.env.get("STAFF_KEY") ?? "";
-const isAdmin = (k: unknown) => !!ADMIN_KEY && k === ADMIN_KEY;
-const isStaff = (k: unknown) => (!!STAFF_KEY && k === STAFF_KEY) || isAdmin(k);  // 管理者也能用行政端
+function safeEqual(a: unknown, b: string) {
+  if (typeof a !== "string" || !b) return false;
+  const x = new TextEncoder().encode(a);
+  const y = new TextEncoder().encode(b);
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+const isAdmin = (k: unknown) => safeEqual(k, ADMIN_KEY);
+const isStaff = (k: unknown) => safeEqual(k, STAFF_KEY) || isAdmin(k);  // 管理者也能用行政端
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
@@ -36,11 +45,17 @@ const sb = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const ALLOWED_ORIGIN = /^https:\/\/411332055\.github\.io$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+function corsHeaders(origin?: string | null) {
+  const allow = origin && ALLOWED_ORIGIN.test(origin) ? origin : "https://411332055.github.io";
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Vary": "Origin",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+let currentCors = corsHeaders();
 
 const SAFETY_RULES = `
 安全規則（優先於一切）：
@@ -87,8 +102,21 @@ const STATUS_TEXT: [RegExp, "full" | "partial" | "none"][] = [
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" },
+    headers: { ...currentCors, "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+function isSafePublicUrl(raw: string) {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const h = u.hostname.toLowerCase();
+    if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h === "[::1]") return false;
+    if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function gemini(path: string, body: unknown) {
@@ -368,7 +396,7 @@ async function chat(question: string, history: { role: string; content: string }
       },
     });
     return new Response(body, {
-      headers: { ...CORS, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" },
+      headers: { ...currentCors, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" },
     });
   }
 
@@ -448,7 +476,7 @@ function toBase64(buf: Uint8Array) {
 
 async function ingestUrl(url: string, source: string, audience = "public") {
   url = String(url ?? "").trim();
-  if (!/^https?:\/\//i.test(url)) return json({ error: "請輸入 http(s) 開頭的網址" }, 400);
+  if (!isSafePublicUrl(url)) return json({ error: "請輸入有效的公開 http(s) 網址" }, 400);
   const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (NDHU-KM-course-project)" } });
   if (!r.ok) return json({ error: `下載失敗：HTTP ${r.status}` }, 400);
   const type = r.headers.get("content-type") ?? "";
@@ -479,6 +507,7 @@ async function ingestUrl(url: string, source: string, audience = "public") {
 // 大型 PDF（> 18MB）：先上傳到 Gemini Files API，再分段（依頁碼）轉成文字
 async function pdfPrepare(url: string) {
   url = String(url ?? "").trim();
+  if (!isSafePublicUrl(url)) return json({ error: "請輸入有效的公開 http(s) 網址" }, 400);
   const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (NDHU-KM-course-project)" } });
   if (!r.ok) return json({ error: `下載失敗：HTTP ${r.status}` }, 400);
   const buf = new Uint8Array(await r.arrayBuffer());
@@ -681,16 +710,23 @@ async function reviewNote(id: number, approve: boolean) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  currentCors = corsHeaders(req.headers.get("origin"));
+  if (req.method === "OPTIONS") return new Response("ok", { headers: currentCors });
   if (req.method !== "POST") return json({ error: "請用 POST" }, 405);
   try {
     if (!GEMINI_KEY) return json({ error: "後端尚未設定 GEMINI_API_KEY" }, 500);
     const body = await req.json().catch(() => ({}));
     const action = body.action ?? "chat";
     const ip = clientIp(req);
+    const rejectAuth = async (msg: string) => {
+      if (!(await allowRequest(`authfail:${ip}`, 10, 60))) {
+        return json({ error: "密碼嘗試次數過多，請稍候 1 分鐘再試。" }, 429);
+      }
+      return json({ error: msg }, 401);
+    };
     if (action === "chat") {
       if (body.staff_key !== undefined) {
-        if (!isStaff(body.staff_key)) return json({ error: "行政人員密碼錯誤" }, 401);
+        if (!isStaff(body.staff_key)) return await rejectAuth("行政人員密碼錯誤");
         return await chat(body.question, body.history, "staff", ip, !!body.stream);
       }
       return await chat(body.question, body.history, "student", ip, !!body.stream);
@@ -701,13 +737,13 @@ Deno.serve(async (req) => {
     // 行政人員（管理者也可以）
     if (["staff_login", "top_questions", "submit_note"].includes(action)) {
       if (!STAFF_KEY && !isAdmin(body.staff_key)) return json({ error: "尚未設定行政人員密碼（STAFF_KEY）" }, 500);
-      if (!isStaff(body.staff_key)) return json({ error: "行政人員密碼錯誤" }, 401);
+      if (!isStaff(body.staff_key)) return await rejectAuth("行政人員密碼錯誤");
       if (action === "staff_login") return json({ ok: true });
       if (action === "top_questions") return await topQuestions(!!body.refresh);
       return await submitNote(body.title, body.content, body.author);
     }
 
-    if (!isAdmin(body.admin_key)) return json({ error: "管理密碼錯誤" }, 401);
+    if (!isAdmin(body.admin_key)) return await rejectAuth("管理密碼錯誤");
     if (action === "ingest") return await ingest(body.source, body.text, !!body.append, body.audience);
     if (action === "ingest_url") return await ingestUrl(body.url, body.source, body.audience);
     if (action === "pdf_prepare") return await pdfPrepare(body.url);
