@@ -9,15 +9,16 @@
 <body>
 <div class="app">
   <header>
-    <span class="links"><a href="#" id="newChat">新對話</a>　<a href="staff.html">行政人員登入</a></span>
+    <span class="links"><a href="#" id="newChat">新對話</a><a href="staff.html">行政人員登入</a></span>
     <h1>🎓 東華大學入學行政 AI 助理</h1>
     <p>第十組｜創新與知識管理　·　回答依據入學行政知識庫</p>
   </header>
 
   <main id="chat">
     <div class="welcome" id="welcome">
+      <div class="welcome-badge">🎓</div>
       <h2>有什麼入學問題想問？</h2>
-      <div>申請入學、報到、註冊繳費……都可以問我</div>
+      <div class="sub">申請入學、報到、註冊繳費、宿舍與獎助學金……都可以問我</div>
       <div class="chips">
         <button class="chip">申請入學有幾個階段？</button>
         <button class="chip">新生報到要準備什麼？</button>
@@ -40,7 +41,7 @@
 <script src="common.js"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview, readImage } = window.APP_UI;
+const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards } = window.APP_UI;
 const chat = document.getElementById('chat');
 const form = document.getElementById('form');
 const q = document.getElementById('q');
@@ -114,11 +115,15 @@ function bindActions(bubble, answer, logId, turn) {
 
 function renderFinal(bubble, question, data, persist = true) {
   let html = md(data.answer);
-  if (data.sources?.length) html += `<div class="sources">📄 資料來源：${data.sources.map(esc).join('、')}</div>`;
+  if (data.images?.length) html += renderImages(data.images);
+  if (data.sources?.length) {
+    html += `<div class="sources"><span>📄 資料來源：</span>${data.sources.map(s => `<span class="src-pill">${esc(s)}</span>`).join('')}</div>`;
+  }
   bubble.innerHTML = html;
+  bindImageCards(bubble);
   let turn = data._turn;
   if (persist) {
-    turn = { q: question, answer: data.answer, sources: data.sources || [], log_id: data.log_id || null };
+    turn = { q: question, answer: data.answer, sources: data.sources || [], images: data.images || [], log_id: data.log_id || null };
     savedTurns.push(turn);
     saveTurns();
   }
@@ -154,7 +159,8 @@ async function ask(question) {
   const displayQ = question || '（已上傳圖片）';
   const userHtml = (img ? `<img class="chat-img" src="${img.previewUrl}" alt="上傳圖片">` : '') + (question ? `<div>${esc(question)}</div>` : '');
   add('user', userHtml);
-  const bubble = add('bot', '<span class="typing"><span></span><span></span><span></span></span>');
+  const bubble = add('bot', '');
+  const stopAnim = startSearchAnim(bubble, { hasImage: !!img, isStaff: false });
   send.disabled = true;
   try {
     const payload = { action: 'chat', question, history: history.slice(-4), stream: true };
@@ -180,7 +186,7 @@ async function ask(question) {
           if (ev.type === 'delta') {
             acc += ev.text;
             const preview = cleanPreview(acc);
-            if (preview) { bubble.innerHTML = md(preview); bubble.scrollIntoView({ block: 'end' }); }
+            if (preview) { stopAnim(); bubble.innerHTML = md(preview); bubble.scrollIntoView({ block: 'end' }); }
           } else if (ev.type === 'done') {
             doneData = ev;
           } else if (ev.type === 'error') {
@@ -189,15 +195,19 @@ async function ask(question) {
         }
       }
       if (!doneData) throw new Error('連線中斷，請再試一次');
+      stopAnim();
       renderFinal(bubble, displayQ, doneData);
     } else {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || r.status);
+      stopAnim();
       renderFinal(bubble, displayQ, data);
     }
   } catch (e) {
+    stopAnim();
     bubble.innerHTML = `<span style="color:#b3261e">${esc(String(e.message || e))}</span>`;
   } finally {
+    stopAnim();
     send.disabled = false;
     bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }

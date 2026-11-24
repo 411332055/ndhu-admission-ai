@@ -34,6 +34,7 @@ alter table public.chat_logs enable row level security;
 
 -- 資料分級：public 學生／家長可查；staff 只有行政人員登入後可查（過濾在資料庫函式裡做）
 alter table public.kb_chunks add column if not exists audience text not null default 'public' check (audience in ('public','staff'));
+alter table public.kb_chunks add column if not exists image_url text;                        -- 圖片類知識（如教學樓平面圖）的公開網址
 create index if not exists kb_chunks_audience_idx on public.kb_chunks (audience);
 alter table public.chat_logs add column if not exists role text not null default 'student';  -- student / staff
 alter table public.chat_logs add column if not exists helpful boolean;                      -- 使用者回饋：true 有幫助 / false 沒幫到
@@ -108,17 +109,18 @@ create table if not exists public.app_cache (
 alter table public.app_cache enable row level security;
 
 -- 向量相似度搜尋（include_staff=false 時只搜公開資料）
+drop function if exists public.match_chunks(extensions.vector, int, float, boolean);
 create or replace function public.match_chunks(
   query_embedding extensions.vector(768),
   match_count int default 4,
   min_similarity float default 0.5,
   include_staff boolean default false
 )
-returns table (id bigint, source text, content text, similarity float, audience text)
+returns table (id bigint, source text, content text, similarity float, audience text, image_url text)
 language sql stable
 set search_path = public, extensions
 as $$
-  select c.id, c.source, c.content, 1 - (c.embedding <=> query_embedding) as similarity, c.audience
+  select c.id, c.source, c.content, 1 - (c.embedding <=> query_embedding) as similarity, c.audience, c.image_url
   from public.kb_chunks c
   where (include_staff or c.audience = 'public')
     and 1 - (c.embedding <=> query_embedding) >= min_similarity
@@ -129,8 +131,9 @@ revoke execute on function public.match_chunks(extensions.vector, int, float, bo
 grant execute on function public.match_chunks(extensions.vector, int, float, boolean) to service_role;
 
 -- 備援與混合檢索：同時比對「文件標題＋內文」的中文雙字詞與英數代碼（標題命中與代碼精準命中皆加權）
+drop function if exists public.match_chunks_text(text, int, boolean);
 create or replace function public.match_chunks_text(q text, match_count int default 4, include_staff boolean default false)
-returns table (id bigint, source text, content text, similarity float, audience text)
+returns table (id bigint, source text, content text, similarity float, audience text, image_url text)
 language sql stable
 set search_path = public
 as $$
@@ -152,7 +155,7 @@ as $$
     select (select count(*) from grams) as ng, (select count(*) from tokens) as nt
   ),
   scored as (
-    select c.id, c.source, c.content, c.audience,
+    select c.id, c.source, c.content, c.audience, c.image_url,
       least(1.0,
         case when (select ng from counts) > 0 then
           (
@@ -170,7 +173,7 @@ as $$
     from public.kb_chunks c
     where include_staff or c.audience = 'public'
   )
-  select id, source, content, s, audience from scored
+  select id, source, content, s, audience, image_url from scored
   where s >= 0.32
   order by s desc, id
   limit match_count;
@@ -246,10 +249,20 @@ insert into public.kb_synonyms (term, expands) values
   ('轉系', '轉系 轉系辦法 教務處'),
   ('雙主修', '雙主修 申請 教務處'),
   ('輔系', '輔修 輔系 申請'),
-  -- 校園交通
-  ('怎麼去', '交通資訊 接駁車 志學火車站'),
+  -- 校園交通與教學樓平面圖
+  ('怎麼去', '交通資訊 接駁車 志學火車站 校園地圖 平面圖'),
   ('志學站', '志學火車站 交通資訊 接駁車'),
-  ('腳踏車', '自行車 腳踏車 校園交通')
+  ('腳踏車', '自行車 腳踏車 校園交通'),
+  ('地圖', '平面圖 校園導覽 配置圖 教學樓'),
+  ('教室在哪', '平面圖 教室配置 樓層 教學樓'),
+  ('管院', '管理學院 平面圖 教學樓'),
+  ('人社', '人文社會科學學院 人社一館 人社二館 人社三館 平面圖'),
+  ('理工', '理工學院 理工一館 理工二館 理工三館 平面圖'),
+  ('花師', '花師教育學院 教育學院 平面圖'),
+  ('原民院', '原住民民族學院 平面圖'),
+  ('環院', '環境暨海洋學院 環境學院 平面圖'),
+  ('藝院', '藝術學院 平面圖'),
+  ('圖書館', '圖書資訊處 圖資大樓 樓層平面圖')
 on conflict (term) do update set expands = excluded.expands;
 
 create or replace function public.expand_query(q text)

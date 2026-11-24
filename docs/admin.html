@@ -12,7 +12,7 @@
 <body>
 <div class="app">
   <header>
-    <span class="links"><a href="index.html">學生端</a>　<a href="staff.html">行政人員端</a></span>
+    <span class="links"><a href="index.html">學生端</a><a href="staff.html">行政人員端</a></span>
     <h1>📚 知識庫管理</h1>
     <p>新增、更新、刪除入學行政知識；查看使用者問了什麼、哪些問題答不出來</p>
   </header>
@@ -28,7 +28,7 @@
 
     <section class="panel">
       <h2>新增 / 更新知識</h2>
-      <label>上傳檔案（.txt .md .pdf .docx .png .jpg .webp，可多選；檔名會當作來源名稱）</label>
+      <label>上傳檔案（.txt .md .pdf .docx .png .jpg .webp，可多選；檔名會當作來源名稱。公開圖片如平面圖會同時保留原圖，提問時自動顯示！）</label>
       <input type="file" id="files" multiple accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp">
       <label>開放對象</label>
       <select id="aud1" class="aud"><option value="public">公開：學生、家長都查得到（官方規定、公告）</option><option value="staff">內部：只有行政人員登入後查得到（作業流程、經驗、例外處理）</option></select>
@@ -49,7 +49,8 @@
       <select id="aud2" class="aud"><option value="public">公開</option><option value="staff">內部（只限行政人員）</option></select>
       <div class="row">
         <button class="primary" id="importUrls">匯入</button>
-        <span class="status" id="urlStatus">PDF 由 Gemini 轉成文字，每份約 10～60 秒</span>
+        <button class="ghost" id="fillMaps" type="button" title="自動填入東華大學全校配置圖、管理學院與理工一～三館平面圖清單">🗺️ 填入教學樓平面圖清單</button>
+        <span class="status" id="urlStatus">PDF 或圖片由 Gemini 轉成文字，圖片會保留原圖供問答顯示</span>
       </div>
     </section>
 
@@ -364,6 +365,30 @@ async function importUrls() {
 
 $('login').onclick = login;
 $('importUrls').onclick = importUrls;
+$('fillMaps').onclick = () => {
+  $('urls').value = [
+    'https://www.ndhu.edu.tw/var/file/0/1000/img/NDHU_Map202509.jpg | 國立東華大學校園導覽平面圖',
+    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145194_0.jpg | 管理學院大樓平面圖（一）',
+    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145199_0.jpg | 管理學院大樓平面圖（二）',
+    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145198_0.jpg | 管理學院大樓平面圖（三）',
+    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145197_0.jpg | 管理學院大樓平面圖（四）',
+    'https://management.ndhu.edu.tw/var/file/13/1013/img/4414/145196_0.jpg | 管理學院大樓平面圖（五）',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/758197030.png | 理工一館一樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/614988357.png | 理工一館二樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/140338647.png | 理工一館三樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/692353239.png | 理工一館四樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/897200554.jpg | 理工二館一樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/252871425.jpg | 理工二館二樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/795512523.jpg | 理工二館三樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/898123377.jpg | 理工二館四樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/473025161.jpg | 理工三館一樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/376917898.jpg | 理工三館二樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/553155189.jpg | 理工三館三樓平面圖',
+    'https://csae.ndhu.edu.tw/var/file/12/1012/img/3964/459399475.jpg | 理工三館四樓平面圖',
+  ].join('\n');
+  $('aud2').value = 'public';
+  status('urlStatus', '已填入 18 張東華校園與教學樓平面圖，點「匯入」就會自動辨識文字並儲存原圖！', 'ok');
+};
 $('key').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('upload').onclick = upload;
 $('synAdd').onclick = async () => {

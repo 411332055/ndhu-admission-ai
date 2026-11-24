@@ -68,20 +68,20 @@ const SYSTEM_STAFF = `你是國立東華大學入學行政「行政人員端」A
 參考資料中標示〔內部〕的是內部作業知識（流程、經驗、例外處理），可以直接引用；標示〔公開〕的是對外公告的規定。
 回答時：先給處理步驟或結論，再補充依據；涉及例外處理時說明要會辦或請示哪個單位（資料有寫才說）。
 規則：
-1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
-2. 參考資料沒有的內容，回答「目前知識庫沒有這項內部資料，歡迎把處理經驗寫成筆記分享，審核後會加入知識庫」，不要自行編造。
-3. 日期、名額、金額等數字必須和參考資料完全一致。
+1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔、語氣友善專業。
+2. 參考資料沒有的內容，請用友善、給予支持與情緒價值的語氣回覆：先肯定對方問了很關鍵的問題（例如「你問到一個很重要的問題！」），再誠摯致歉說明目前知識庫還沒有這項內部資料，並溫暖邀請對方日後把處理經驗寫成筆記分享（審核後會加入知識庫幫助同事），絕對不要自行編造。
+3. 日期、名額、金額等數字必須和參考資料完全一致。若參考資料包含平面圖或地圖，系統會自動把圖片附在回覆下方，你可以順帶提醒使用者參考下方的平面圖（點擊可放大）。
 4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答，並附上實際引用的參考資料編號（例如【完整|1,2】、【部分|1】、【無資料】）：
    【完整|編號】參考資料足以完整回答問題
    【部分|編號】只能回答一部分，問題中有細節參考資料沒有
    【無資料】參考資料完全無法回答
    標記必須含【】括號。這個標記只用來統計與對應資料來源，使用者看不到。` + SAFETY_RULES;
 
-const SYSTEM = `你是國立東華大學入學行政 AI 助理。
+const SYSTEM = `你是國立東華大學入學行政 AI 助理，語氣親切、有耐心、讓人感到被尊重。
 規則：
 1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
-2. 參考資料沒有的內容，回答「目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）」，不要自行編造。
-3. 日期、名額、金額等數字必須和參考資料完全一致。
+2. 參考資料沒有的內容，請給予溫暖的情緒價值：先真誠肯定使用者（例如「你的問題問得很好！」），再誠摯致歉說明目前知識庫裡還沒有這方面的相關資訊，並貼心建議洽詢東華大學教務處綜合業務組（03-8906143），同時安慰對方問題已記錄下來、未來會持續補充，絕對不要自行編造。
+3. 日期、名額、金額等數字必須和參考資料完全一致。若參考資料包含平面圖或地圖，系統會自動把圖片附在回覆下方，你可以順帶提醒使用者參考下方的平面圖（點擊可放大）。
 4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答，並附上實際引用的參考資料編號（例如【完整|1,2】、【部分|1】、【無資料】）：
    【完整|編號】參考資料足以完整回答問題
    【部分|編號】只能回答一部分，問題中有細節（例如具體標準、分數、日期）參考資料沒有
@@ -94,7 +94,7 @@ const BLOCKED_ANSWER = "這個問題涉及系統安全資訊（例如密碼、�
 
 const STATUS_TAG = /\s*[【\[]\s*(完整|部分|無資料)(?:\s*[|｜:：]\s*([\d,\s、]+))?\s*[】\]]\s*$/;
 const STATUS_ANY = /[【\[]\s*(完整|部分|無資料)(?:\s*[|｜:：]\s*[\d,\s、]+)?\s*[】\]]/g;
-const NO_INFO = /目前知識庫沒有(相關資訊|這項內部資料)/;
+const NO_INFO = /目前(的)?知識庫(裡|中)?(還)?沒有(相關|這項|這方面|足夠)/;
 // AI 偶爾把標記寫成說明文字，也要認得並移除
 const STATUS_TEXT: [RegExp, "full" | "partial" | "none"][] = [
   [/\n\s*(標記[:：]?\s*)?參考資料足以完整回答(問題)?[。.]?\s*$/, "full"],
@@ -231,11 +231,17 @@ function cleanAnswer(raw: string) {
 }
 
 function pickSources(hits: any[], status: "full" | "partial" | "none", usedIndices: number[]) {
-  if (status === "none") return { sources: [] as string[], usedHits: [] as any[] };
+  if (status === "none") return { sources: [] as string[], usedHits: [] as any[], images: [] as { source: string; url: string }[] };
   const picked = usedIndices.map((idx) => hits[idx - 1]).filter(Boolean);
   const finalHits = picked.length ? picked : hits.slice(0, 3);
   const sources = [...new Set(finalHits.map((h: any) => h.source))] as string[];
-  return { sources, usedHits: finalHits };
+  const imgMap = new Map<string, { source: string; url: string }>();
+  for (const h of finalHits) {
+    if (h?.image_url && !imgMap.has(h.image_url)) {
+      imgMap.set(h.image_url, { source: h.source, url: h.image_url });
+    }
+  }
+  return { sources, usedHits: finalHits, images: [...imgMap.values()] };
 }
 
 function mergeAndRank(vecRaw: any[], kwRaw: any[], staff: boolean) {
@@ -330,7 +336,7 @@ async function chat(
     const { data: logRow } = await sb.from("chat_logs").insert({
       question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
     }).select("id").single();
-    return json({ answer: v.answer, sources: v.sources ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
+    return json({ answer: v.answer, sources: v.sources ?? [], images: v.images ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
   }
 
   // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
@@ -370,8 +376,8 @@ async function chat(
 
   if (!hits?.length && !imgPart) {
     const answer = staff
-      ? "目前知識庫沒有這項內部資料，歡迎把處理經驗寫成筆記分享，審核後會加入知識庫。"
-      : "目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）。";
+      ? "你問到一個很關鍵的問題！很抱歉，目前知識庫裡還沒有這項內部作業資料 🙇‍♂️\n\n如果之後處理完有心得或最新流程，非常歡迎到「分享經驗」分頁寫成筆記，審核後就會加入內部知識庫，幫之後的同事省下好多時間！"
+      : "你的問題問得很好！很抱歉，我目前的知識庫裡還沒有這方面的相關資訊，沒辦法直接幫上忙 🙇‍♂️\n\n為了確保你拿到最正確的答案，建議直接洽詢**東華大學教務處綜合業務組（03-8906143）**，會有專人協助你喔！我同時也把這個問題記下來了，之後會再補充進知識庫。";
     const { data: logRow } = await sb.from("chat_logs").insert({
       question: logQuestion, answer, sources: [], top_score: top, answered: false, status: "none", role,
     }).select("id").single();
@@ -440,7 +446,7 @@ async function chat(
             }
           }
           const { answer, status, usedIndices } = cleanAnswer(raw);
-          const { sources: finalSources, usedHits } = pickSources(hits, status, usedIndices);
+          const { sources: finalSources, usedHits, images: finalImages } = pickSources(hits, status, usedIndices);
           const finalInternal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
           const { data: logRow } = await sb.from("chat_logs").insert({
             question: logQuestion, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
@@ -448,11 +454,11 @@ async function chat(
           if (cacheKey && status === "full") {
             await sb.from("app_cache").upsert({
               key: cacheKey,
-              value: { answer, sources: finalSources, top_score: top },
+              value: { answer, sources: finalSources, images: finalImages, top_score: top },
               updated_at: new Date().toISOString(),
             });
           }
-          send({ type: "done", answer, sources: finalSources, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
+          send({ type: "done", answer, sources: finalSources, images: finalImages, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
         } catch (e) {
           console.error("stream read error:", e);
           send({ type: "error", error: "回答過程中連線中斷，請再試一次。" });
@@ -480,7 +486,7 @@ async function chat(
   }
   const raw = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
   const { answer, status, usedIndices } = cleanAnswer(raw);
-  const { sources, usedHits } = pickSources(hits, status, usedIndices);
+  const { sources, usedHits, images } = pickSources(hits, status, usedIndices);
   const internal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
 
   const { data: logRow } = await sb.from("chat_logs").insert({
@@ -489,11 +495,11 @@ async function chat(
   if (cacheKey && status === "full") {
     await sb.from("app_cache").upsert({
       key: cacheKey,
-      value: { answer, sources, top_score: top },
+      value: { answer, sources, images, top_score: top },
       updated_at: new Date().toISOString(),
     });
   }
-  return json({ answer, sources, internal, top_score: top, log_id: logRow?.id ?? null });
+  return json({ answer, sources, images, internal, top_score: top, log_id: logRow?.id ?? null });
 }
 
 async function feedback(id: number, helpful: boolean, ip = "unknown") {
@@ -505,20 +511,21 @@ async function feedback(id: number, helpful: boolean, ip = "unknown") {
   return json({ ok: true });
 }
 
-async function ingest(source: string, text: string, append = false, audience = "public") {
+async function ingest(source: string, text: string, append = false, audience = "public", imageUrl?: string | null) {
   audience = audience === "staff" ? "staff" : "public";
   source = String(source ?? "").normalize("NFKC").trim().slice(0, 200);
   text = String(text ?? "").normalize("NFKC");
+  const cleanImgUrl = typeof imageUrl === "string" && /^https?:\/\//i.test(imageUrl.trim()) ? imageUrl.trim() : null;
   if (!source || !text.trim()) return json({ error: "需要 source 與 text" }, 400);
   const chunks = splitText(text);
   if (chunks.length > 500) return json({ error: "內容太長，請分成多份上傳" }, 400);
   const vecs = await embed(chunks, "RETRIEVAL_DOCUMENT");
   if (!append) await sb.from("kb_chunks").delete().eq("source", source); // 同名來源先刪除再寫入（更新）
-  const rows = chunks.map((content, i) => ({ source, content, embedding: vecs[i], audience }));
+  const rows = chunks.map((content, i) => ({ source, content, embedding: vecs[i], audience, ...(cleanImgUrl ? { image_url: cleanImgUrl } : {}) }));
   const { error } = await sb.from("kb_chunks").insert(rows);
   if (error) throw error;
   await clearQaCache();
-  return json({ ok: true, source, chunks: chunks.length, audience });
+  return json({ ok: true, source, chunks: chunks.length, audience, ...(cleanImgUrl ? { image_url: cleanImgUrl } : {}) });
 }
 
 function htmlToText(html: string) {
@@ -541,7 +548,39 @@ function toBase64(buf: Uint8Array) {
   return btoa(s);
 }
 
-const IMAGE_OCR_PROMPT = "請把這張圖片中的所有資訊完整轉成繁體中文純文字。規則：逐字保留所有日期、時間、金額、名額、電話、網址、地點與單位名稱；若是表格或流程圖，請依步驟或「欄位 | 欄位」清楚條列；不要摘要、不要省略、不要加入額外說明或評論。";
+function fromBase64(b64: string) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+const IMG_BUCKET = "kb-images";
+let imgBucketReady = false;
+async function uploadImageToStorage(source: string, mimeType: string, bytes: Uint8Array) {
+  try {
+    if (!imgBucketReady) {
+      const { data: buckets } = await sb.storage.listBuckets();
+      if (!buckets?.some((b) => b.name === IMG_BUCKET)) {
+        await sb.storage.createBucket(IMG_BUCKET, { public: true, fileSizeLimit: 12 * 1024 * 1024 });
+      }
+      imgBucketReady = true;
+    }
+    const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+    const hashHex = [...new Uint8Array(hashBuf)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const ext = mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : mimeType === "image/gif" ? "gif" : "jpg";
+    const path = `kb/${hashHex}.${ext}`;
+    const { error } = await sb.storage.from(IMG_BUCKET).upload(path, bytes, { contentType: mimeType, upsert: true });
+    if (error) throw error;
+    const { data } = sb.storage.from(IMG_BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
+  } catch (e) {
+    console.error("uploadImageToStorage failed:", e);
+    return null;
+  }
+}
+
+const IMAGE_OCR_PROMPT = "請把這張圖片中的所有資訊完整轉成繁體中文純文字。規則：逐字保留所有日期、時間、金額、名額、電話、網址、地點、大樓名稱、樓層、教室編號與單位名稱；若是平面圖或校園地圖，請清楚列出圖片標題、棟別、各樓層教室或空間編號與相對位置；若是表格或流程圖，請依步驟或「欄位 | 欄位」清楚條列；不要摘要、不要省略、不要加入額外說明或評論。";
 
 async function ingestImage(source: string, mimeType: string, dataBase64: string, audience = "public") {
   source = String(source ?? "").trim().slice(0, 200);
@@ -553,16 +592,19 @@ async function ingestImage(source: string, mimeType: string, dataBase64: string,
   if (!clean) return json({ error: "缺少圖片資料" }, 400);
   if (clean.length > 14 * 1024 * 1024) return json({ error: "圖片太大（請小於 10MB）" }, 413);
   const normMime = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
-  const out = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
-    contents: [{ role: "user", parts: [
-      { inlineData: { mimeType: normMime, data: clean } },
-      { text: IMAGE_OCR_PROMPT },
-    ] }],
-    generationConfig: { temperature: 0, maxOutputTokens: 8192 },
-  });
+  const [out, storedUrl] = await Promise.all([
+    gemini(`models/${GEMINI_MODEL}:generateContent`, {
+      contents: [{ role: "user", parts: [
+        { inlineData: { mimeType: normMime, data: clean } },
+        { text: IMAGE_OCR_PROMPT },
+      ] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+    }),
+    audience === "public" ? uploadImageToStorage(source, normMime, fromBase64(clean)) : Promise.resolve(null),
+  ]);
   const text = (out?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "").trim();
   if (text.length < 15) return json({ error: "圖片中讀不到足夠的文字內容" }, 400);
-  const res = await ingest(source, text, false, audience);
+  const res = await ingest(source, text, false, audience, storedUrl);
   const body = await res.json();
   return json({ ...body, chars: text.length }, res.status);
 }
@@ -576,6 +618,7 @@ async function ingestUrl(url: string, source: string, audience = "public") {
   const buf = new Uint8Array(await r.arrayBuffer());
   let text: string;
   let truncated = false;
+  let imageUrl: string | null = null;
   if (type.includes("pdf") || /\.pdf($|\?)/i.test(url)) {
     if (buf.length > 18 * 1024 * 1024) return json({ error: "PDF 超過 18MB", tooLarge: true }, 413);
     const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
@@ -593,20 +636,24 @@ async function ingestUrl(url: string, source: string, audience = "public") {
       : /\.png($|\?)/i.test(url) ? "image/png"
       : /\.webp($|\?)/i.test(url) ? "image/webp"
       : /\.gif($|\?)/i.test(url) ? "image/gif" : "image/jpeg";
-    const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
-      contents: [{ role: "user", parts: [
-        { inlineData: { mimeType: imgMime, data: toBase64(buf) } },
-        { text: IMAGE_OCR_PROMPT },
-      ] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 8192 },
-    });
+    const [data, storedUrl] = await Promise.all([
+      gemini(`models/${GEMINI_MODEL}:generateContent`, {
+        contents: [{ role: "user", parts: [
+          { inlineData: { mimeType: imgMime, data: toBase64(buf) } },
+          { text: IMAGE_OCR_PROMPT },
+        ] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+      }),
+      audience === "public" ? uploadImageToStorage(source, imgMime, buf) : Promise.resolve(null),
+    ]);
     text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+    imageUrl = storedUrl ?? (audience === "public" ? url : null);
   } else {
     text = htmlToText(new TextDecoder("utf-8").decode(buf));
   }
   if (text.trim().length < 20) return json({ error: "讀不到文字內容" }, 400);
   text = `（原始網址：${url}）\n` + text;
-  const res = await ingest(source, text, false, audience);
+  const res = await ingest(source, text, false, audience, imageUrl);
   const body = await res.json();
   return json({ ...body, truncated, chars: text.length }, res.status);
 }
@@ -876,7 +923,7 @@ Deno.serve(async (req) => {
     }
 
     if (!isAdmin(body.admin_key)) return await rejectAuth("管理密碼錯誤");
-    if (action === "ingest") return await ingest(body.source, body.text, !!body.append, body.audience);
+    if (action === "ingest") return await ingest(body.source, body.text, !!body.append, body.audience, body.image_url);
     if (action === "ingest_image") return await ingestImage(body.source, body.mimeType, body.data, body.audience);
     if (action === "ingest_url") return await ingestUrl(body.url, body.source, body.audience);
     if (action === "pdf_prepare") return await pdfPrepare(body.url);
