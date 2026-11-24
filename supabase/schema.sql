@@ -36,6 +36,56 @@ alter table public.chat_logs enable row level security;
 alter table public.kb_chunks add column if not exists audience text not null default 'public' check (audience in ('public','staff'));
 create index if not exists kb_chunks_audience_idx on public.kb_chunks (audience);
 alter table public.chat_logs add column if not exists role text not null default 'student';  -- student / staff
+alter table public.chat_logs add column if not exists helpful boolean;                      -- 使用者回饋：true 有幫助 / false 沒幫到
+
+-- 知識來源統計（資料庫端直接分組，避免超過 1,000 段時被查詢上限截斷）
+create or replace function public.list_sources()
+returns table (source text, audience text, chunks bigint, updated timestamptz)
+language sql stable
+set search_path = public
+as $$
+  select c.source, max(c.audience) as audience, count(*) as chunks, max(c.created_at) as updated
+  from public.kb_chunks c
+  group by c.source
+  order by max(c.created_at) desc;
+$$;
+revoke execute on function public.list_sources() from public, anon, authenticated;
+grant execute on function public.list_sources() to service_role;
+
+-- 提問頻率限制（防洗版，保護免費額度）
+create table if not exists public.rate_limits (
+  key text primary key,
+  count int not null default 1,
+  window_start timestamptz not null default now()
+);
+alter table public.rate_limits enable row level security;
+
+create or replace function public.check_rate_limit(p_key text, p_limit int default 8, p_window_sec int default 60)
+returns boolean
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_count int;
+begin
+  delete from public.rate_limits where window_start < now() - make_interval(secs => p_window_sec * 5);
+  insert into public.rate_limits (key, count, window_start)
+  values (p_key, 1, now())
+  on conflict (key) do update
+  set count = case
+        when rate_limits.window_start < now() - make_interval(secs => p_window_sec) then 1
+        else rate_limits.count + 1
+      end,
+      window_start = case
+        when rate_limits.window_start < now() - make_interval(secs => p_window_sec) then now()
+        else rate_limits.window_start
+      end
+  returning count into v_count;
+  return v_count <= p_limit;
+end;
+$$;
+revoke execute on function public.check_rate_limit(text, int, int) from public, anon, authenticated;
+grant execute on function public.check_rate_limit(text, int, int) to service_role;
 
 -- 行政人員分享的經驗筆記（隱性知識外化），管理者審核通過後才寫入 staff 知識庫
 create table if not exists public.staff_notes (

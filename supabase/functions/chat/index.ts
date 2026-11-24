@@ -1,7 +1,8 @@
 // 東華大學入學行政 AI 助理 — Supabase Edge Function
 // 動作：
-//   chat   { question, history? }                → RAG 問答（公開）
-//   ingest { admin_key, source, text }           → 新增知識（管理員）
+//   chat     { question, history? }              → RAG 問答（公開）
+//   feedback { id, helpful }                     → 使用者回饋 👍/👎（公開）
+//   ingest   { admin_key, source, text }         → 新增知識（管理員）
 //   ingest_url { admin_key, url, source }        → 從網址下載 PDF / 網頁並加入知識（管理員）
 //   pdf_prepare / pdf_part                       → 大型 PDF 分段匯入（管理員）
 //   list   { admin_key }                       → 列出知識來源（管理員）
@@ -154,19 +155,46 @@ function splitText(text: string, size = CHUNK_SIZE, overlap = OVERLAP) {
   return chunks;
 }
 
-async function chat(question: string, history: { role: string; content: string }[] = [], role: "student" | "staff" = "student") {
+function clientIp(req: Request) {
+  return req.headers.get("cf-connecting-ip")
+    ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? req.headers.get("x-real-ip")
+    ?? "unknown";
+}
+
+async function allowRequest(key: string, limit: number, windowSec = 60) {
+  try {
+    const { data, error } = await sb.rpc("check_rate_limit", { p_key: key, p_limit: limit, p_window_sec: windowSec });
+    if (error) { console.error("rate_limit rpc skipped:", error.message); return true; }
+    return data !== false;
+  } catch (e) {
+    console.error("rate_limit failed:", e);
+    return true;
+  }
+}
+
+async function chat(question: string, history: { role: string; content: string }[] = [], role: "student" | "staff" = "student", ip = "unknown") {
   const staff = role === "staff";
   question = String(question ?? "").trim().slice(0, 500);
   if (!question) return json({ error: "請輸入問題" }, 400);
+  if (!(await allowRequest(`chat:${role}:${ip}`, staff ? 15 : 8, 60))) {
+    return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
+  }
   if (SENSITIVE.test(question)) {
     await sb.from("chat_logs").insert({ question, answer: BLOCKED_ANSWER, sources: [], answered: false, status: "blocked", role, resolved: true });
     return json({ answer: BLOCKED_ANSWER, sources: [], internal: [], top_score: null });
   }
 
+  // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
+  const prevUser = [...(Array.isArray(history) ? history : [])].reverse().find((m) => m?.role === "user" && m?.content);
+  const searchQuery = prevUser && question.length <= 25
+    ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
+    : question;
+
   // 混合檢索：向量（語意）＋ 關鍵字（雙字詞重疊）。向量額度用完時只用關鍵字，系統照常回答。
   let hits: any[] = [];
   try {
-    const [qv] = await embed([question], "RETRIEVAL_QUERY");
+    const [qv] = await embed([searchQuery], "RETRIEVAL_QUERY");
     const { data, error } = await sb.rpc("match_chunks", {
       query_embedding: qv, match_count: TOP_K, min_similarity: MIN_SIM, include_staff: staff,
     });
@@ -175,7 +203,7 @@ async function chat(question: string, history: { role: string; content: string }
   } catch (e) {
     console.error("vector search failed, keyword only:", e);
   }
-  const { data: kw } = await sb.rpc("match_chunks_text", { q: question, match_count: TOP_K, include_staff: staff });
+  const { data: kw } = await sb.rpc("match_chunks_text", { q: searchQuery, match_count: TOP_K, include_staff: staff });
   // 雙重保險：學生端絕不送出內部資料
   if (!staff) hits = hits.filter((h) => h.audience !== "staff");
   for (const k of kw ?? []) {
@@ -196,16 +224,26 @@ async function chat(question: string, history: { role: string; content: string }
   } else {
     const ctx = hits.map((h: any, i: number) =>
       `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${h.content}`).join("\n\n");
-    const contents = history.slice(-4).map((m) => ({
+    const contents = (Array.isArray(history) ? history : []).slice(-4).map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: String(m.content).slice(0, 1500) }],
     }));
     contents.push({ role: "user", parts: [{ text: `參考資料：\n${ctx}\n\n問題：${question}` }] });
-    const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
-      systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
-      contents,
-      generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
-    });
+    let data;
+    try {
+      data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
+        systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
+        contents,
+        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("chat generate failed:", msg);
+      if (/Gemini (429|500|503)/.test(msg)) {
+        return json({ error: "目前詢問人數較多或系統暫時忙碌，請稍後再試；若有急需，請洽詢東華大學教務處綜合業務組（03-8906143）。" }, 503);
+      }
+      throw e;
+    }
     answer = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim()
       || "抱歉，暫時無法產生回答，請稍後再試。";
     // 由 AI 自己回報是否真的答得出來；沒有標記時用文字判斷
@@ -224,11 +262,20 @@ async function chat(question: string, history: { role: string; content: string }
     if (status === "none") sources = [];
   }
 
-  await sb.from("chat_logs").insert({
+  const { data: logRow } = await sb.from("chat_logs").insert({
     question, answer, sources, top_score: top, answered: status === "full", status, role,
-  });
+  }).select("id").single();
   const internal = staff ? [...new Set(hits.filter((h) => h.audience === "staff").map((h) => h.source))] : [];
-  return json({ answer, sources, internal: internal.filter((x) => sources.includes(x)), top_score: top });
+  return json({ answer, sources, internal: internal.filter((x) => sources.includes(x)), top_score: top, log_id: logRow?.id ?? null });
+}
+
+async function feedback(id: number, helpful: boolean, ip = "unknown") {
+  if (!Number.isInteger(id) || id <= 0 || typeof helpful !== "boolean") return json({ error: "參數不正確" }, 400);
+  if (!(await allowRequest(`fb:${ip}`, 30, 60))) return json({ error: "操作太頻繁，請稍後再試" }, 429);
+  const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const { error } = await sb.from("chat_logs").update({ helpful }).eq("id", id).gte("created_at", since);
+  if (error) throw error;
+  return json({ ok: true });
 }
 
 async function ingest(source: string, text: string, append = false, audience = "public") {
@@ -382,6 +429,10 @@ async function processQueue() {
 }
 
 async function list() {
+  const { data: rpcData, error: rpcErr } = await sb.rpc("list_sources");
+  if (!rpcErr && Array.isArray(rpcData)) {
+    return json({ sources: rpcData.map((r: any) => ({ source: r.source, chunks: Number(r.chunks), updated: r.updated, audience: r.audience })) });
+  }
   const { data, error } = await sb.from("kb_chunks").select("source, created_at, audience");
   if (error) throw error;
   const map = new Map<string, { source: string; chunks: number; updated: string; audience: string }>();
@@ -395,14 +446,21 @@ async function list() {
 }
 
 async function stats() {
-  const { data, error } = await sb.from("chat_logs")
-    .select("id, question, answer, status, resolved, top_score, created_at, role")
+  let { data, error } = await sb.from("chat_logs")
+    .select("id, question, answer, status, resolved, top_score, created_at, role, helpful")
     .order("created_at", { ascending: false }).limit(200);
+  if (error && /helpful/.test(error.message)) {
+    ({ data, error } = await sb.from("chat_logs")
+      .select("id, question, answer, status, resolved, top_score, created_at, role")
+      .order("created_at", { ascending: false }).limit(200));
+  }
   if (error) throw error;
   const total = data?.length ?? 0;
-  const gaps = (data ?? []).filter((r) => (r.status === "partial" || r.status === "none") && !r.resolved);
+  const gaps = (data ?? []).filter((r) => (r.status === "partial" || r.status === "none" || r.helpful === false) && !r.resolved);
   const blocked = (data ?? []).filter((r) => r.status === "blocked").length;
-  return json({ total, unanswered: gaps.length, blocked, recent: data, gaps });
+  const helpfulYes = (data ?? []).filter((r) => r.helpful === true).length;
+  const helpfulNo = (data ?? []).filter((r) => r.helpful === false).length;
+  return json({ total, unanswered: gaps.length, blocked, helpfulYes, helpfulNo, recent: data, gaps });
 }
 
 async function resolveGap(id: number, resolved = true) {
@@ -496,13 +554,15 @@ Deno.serve(async (req) => {
     if (!GEMINI_KEY) return json({ error: "後端尚未設定 GEMINI_API_KEY" }, 500);
     const body = await req.json().catch(() => ({}));
     const action = body.action ?? "chat";
+    const ip = clientIp(req);
     if (action === "chat") {
       if (body.staff_key !== undefined) {
         if (!isStaff(body.staff_key)) return json({ error: "行政人員密碼錯誤" }, 401);
-        return await chat(body.question, body.history, "staff");
+        return await chat(body.question, body.history, "staff", ip);
       }
-      return await chat(body.question, body.history);
+      return await chat(body.question, body.history, "student", ip);
     }
+    if (action === "feedback") return await feedback(Number(body.id), body.helpful, ip);
     if (action === "process_queue") return await processQueue();
 
     // 行政人員（管理者也可以）

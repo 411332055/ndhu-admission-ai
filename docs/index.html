@@ -9,7 +9,7 @@
 <body>
 <div class="app">
   <header>
-    <span class="links"><a href="staff.html">行政人員登入</a></span>
+    <span class="links"><a href="#" id="newChat">新對話</a>　<a href="staff.html">行政人員登入</a></span>
     <h1>🎓 東華大學入學行政 AI 助理</h1>
     <p>第十組｜創新與知識管理　·　回答依據入學行政知識庫</p>
   </header>
@@ -41,13 +41,19 @@ const form = document.getElementById('form');
 const q = document.getElementById('q');
 const send = document.getElementById('send');
 const history = [];
+const WELCOME_HTML = chat.innerHTML;
 
 function esc(s) {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-// 簡單的 Markdown：粗體、條列、段落
+function linkify(s) {
+  return s
+    .replace(/(https?:\/\/[^\s<>）)】，。、；！？]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|[^\d\/\-a-zA-Z])(0\d-\d{3,4}-?\d{3,4})/g, (_, pre, tel) => `${pre}<a href="tel:${tel.replace(/-/g, '')}">${tel}</a>`);
+}
+// 簡單的 Markdown：粗體、條列、段落、網址與電話自動連結
 function md(text) {
-  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').split('\n');
+  const lines = linkify(esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')).split('\n');
   let html = '', list = null;
   for (const raw of lines) {
     const line = raw.trim();
@@ -77,6 +83,30 @@ function add(role, html) {
   return row.firstChild;
 }
 
+function bindFeedback(bubble, logId) {
+  const bar = document.createElement('div');
+  bar.className = 'fb';
+  bar.innerHTML = '<span>這則回答有幫助嗎？</span>'
+    + '<button type="button" data-v="1">👍 有幫助</button>'
+    + '<button type="button" data-v="0">👎 沒幫到</button>';
+  bar.querySelectorAll('button').forEach(btn => btn.onclick = async () => {
+    const helpful = btn.dataset.v === '1';
+    bar.querySelectorAll('button').forEach(b => b.disabled = true);
+    btn.classList.add('picked');
+    try {
+      await fetch(URL_, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'feedback', id: logId, helpful }),
+      });
+      bar.querySelector('span').textContent = helpful ? '謝謝回饋！' : '已記錄，我們會再補充資料！';
+    } catch {
+      bar.querySelectorAll('button').forEach(b => b.disabled = false);
+      btn.classList.remove('picked');
+    }
+  });
+  bubble.appendChild(bar);
+}
+
 async function ask(question) {
   question = question.trim();
   if (!question) return;
@@ -94,21 +124,33 @@ async function ask(question) {
     let html = md(data.answer);
     if (data.sources?.length) html += `<div class="sources">📄 資料來源：${data.sources.map(esc).join('、')}</div>`;
     bubble.innerHTML = html;
+    if (data.log_id) bindFeedback(bubble, data.log_id);
     history.push({ role: 'user', content: question }, { role: 'assistant', content: data.answer });
   } catch (e) {
-    bubble.innerHTML = `<span style="color:#b3261e">連線失敗：${esc(String(e.message || e))}，請稍後再試。</span>`;
+    bubble.innerHTML = `<span style="color:#b3261e">${esc(String(e.message || e))}</span>`;
   } finally {
     send.disabled = false;
     bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 }
 
+function bindChips() {
+  chat.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+}
+document.getElementById('newChat').addEventListener('click', e => {
+  e.preventDefault();
+  history.length = 0;
+  chat.innerHTML = WELCOME_HTML;
+  bindChips();
+  q.focus();
+});
+
 form.addEventListener('submit', e => { e.preventDefault(); const v = q.value; q.value = ''; q.style.height = ''; ask(v); });
 q.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
 });
 q.addEventListener('input', () => { q.style.height = 'auto'; q.style.height = q.scrollHeight + 'px'; });
-document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+bindChips();
 </script>
 </body>
 </html>

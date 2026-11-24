@@ -33,6 +33,7 @@
       <button data-tab="ask" class="on">內部問答</button>
       <button data-tab="top">學生常問 Top 10</button>
       <button data-tab="note">分享經驗</button>
+      <button type="button" id="newChat" class="new-chat">新對話</button>
     </nav>
 
     <!-- 內部問答 -->
@@ -99,8 +100,13 @@ const history = [];
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+function linkify(s) {
+  return s
+    .replace(/(https?:\/\/[^\s<>）)】，。、；！？]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|[^\d\/\-a-zA-Z])(0\d-\d{3,4}-?\d{3,4})/g, (_, pre, tel) => `${pre}<a href="tel:${tel.replace(/-/g, '')}">${tel}</a>`);
+}
 function md(text) {
-  const lines = esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').split('\n');
+  const lines = linkify(esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')).split('\n');
   let html = '', list = null;
   for (const raw of lines) {
     const line = raw.trim();
@@ -153,14 +159,16 @@ $('logout').onclick = e => { e.preventDefault(); logout(); };
 
 // ── 分頁 ──
 let topLoaded = false;
-document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button[data-tab]').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.pane').forEach(p => p.hidden = p.id !== 'pane-' + b.dataset.tab);
+  $('newChat').hidden = b.dataset.tab !== 'ask';
   if (b.dataset.tab === 'top' && !topLoaded) loadTop();
 });
 
 // ── 內部問答 ──
 const chat = $('chat'), form = $('form'), q = $('q'), send = $('send');
+const WELCOME_HTML = chat.innerHTML;
 function add(role, html) {
   $('welcome')?.remove();
   const row = document.createElement('div');
@@ -185,12 +193,24 @@ async function ask(question) {
     history.push({ role: 'user', content: question }, { role: 'assistant', content: d.answer });
   } catch (e) {
     bubble.innerHTML = `<span style="color:#b3261e">${esc(e.message)}</span>`;
-  } finally { send.disabled = false; }
+  } finally {
+    send.disabled = false;
+    bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
 }
+function bindChips() {
+  chat.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+}
+$('newChat').onclick = () => {
+  history.length = 0;
+  chat.innerHTML = WELCOME_HTML;
+  bindChips();
+  q.focus();
+};
 form.addEventListener('submit', e => { e.preventDefault(); const v = q.value; q.value = ''; q.style.height = ''; ask(v); });
 q.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
 q.addEventListener('input', () => { q.style.height = 'auto'; q.style.height = q.scrollHeight + 'px'; });
-document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+bindChips();
 
 // ── 熱門問題 ──
 async function loadTop(refresh = false) {

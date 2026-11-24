@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>知識庫管理｜東華大學入學行政 AI 助理</title>
+<meta name="robots" content="noindex">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -54,6 +55,15 @@
 
     <section class="panel">
       <h2>知識來源 <button class="ghost" id="refresh" style="float:right">重新整理</button></h2>
+      <div class="status" id="srcSummary"></div>
+      <div class="filter-bar">
+        <input type="text" id="srcSearch" placeholder="搜尋來源名稱…">
+        <select id="srcFilter" class="aud">
+          <option value="all">全部對象</option>
+          <option value="public">只看公開</option>
+          <option value="staff">只看內部 🔒</option>
+        </select>
+      </div>
       <table><thead><tr><th>來源</th><th>對象</th><th>段數</th><th>更新時間</th><th></th></tr></thead>
         <tbody id="srcList"><tr><td colspan="5" class="status">請先登入</td></tr></tbody></table>
     </section>
@@ -95,14 +105,23 @@ async function api(body) {
   return data;
 }
 
-async function loadSources() {
-  const { sources } = await api({ action: 'list' });
-  $('srcList').innerHTML = sources.length ? sources.sort((a, b) => b.updated.localeCompare(a.updated)).map(s =>
+let allSources = [];
+function renderSources() {
+  const kw = $('srcSearch').value.trim().toLowerCase();
+  const f = $('srcFilter').value;
+  const totalChunks = allSources.reduce((s, x) => s + Number(x.chunks || 0), 0);
+  const pub = allSources.filter(x => x.audience !== 'staff').length;
+  const stf = allSources.length - pub;
+  status('srcSummary', `共 ${allSources.length} 份來源（公開 ${pub}、內部 ${stf}），合計 ${totalChunks} 段。`);
+  const list = allSources
+    .filter(s => (f === 'all' || s.audience === f) && (!kw || s.source.toLowerCase().includes(kw)))
+    .sort((a, b) => b.updated.localeCompare(a.updated));
+  $('srcList').innerHTML = list.length ? list.map(s =>
     `<tr><td>${esc(s.source)}</td>
      <td><button class="ghost aud-btn ${s.audience === 'staff' ? 'staff' : ''}" data-aud="${esc(s.source)}" data-cur="${s.audience}" title="點一下切換">${s.audience === 'staff' ? '🔒 內部' : '公開'}</button></td>
      <td>${s.chunks}</td><td>${fmt(s.updated)}</td>
      <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`).join('')
-    : '<tr><td colspan="5" class="status">知識庫目前是空的</td></tr>';
+    : `<tr><td colspan="5" class="status">${allSources.length ? '沒有符合條件的來源' : '知識庫目前是空的'}</td></tr>`;
   document.querySelectorAll('[data-aud]').forEach(b => b.onclick = async () => {
     const to = b.dataset.cur === 'staff' ? 'public' : 'staff';
     if (!confirm(`把「${b.dataset.aud}」改成${to === 'staff' ? '內部（學生查不到）' : '公開（學生查得到）'}？`)) return;
@@ -113,19 +132,30 @@ async function loadSources() {
     await api({ action: 'delete', source: b.dataset.del }); loadSources();
   });
 }
+async function loadSources() {
+  const { sources } = await api({ action: 'list' });
+  allSources = sources;
+  renderSources();
+}
+$('srcSearch').oninput = renderSources;
+$('srcFilter').onchange = renderSources;
 
 async function loadStats() {
   const d = await api({ action: 'stats' });
-  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答或沒有資料）${d.blocked ? `，攔截 ${d.blocked} 則詢問密碼或系統資訊的提問` : ''}。點問題可看 AI 的回答；補好資料後按「已補充」。`);
+  const fbText = (d.helpfulYes || d.helpfulNo) ? `；使用者回饋 👍 ${d.helpfulYes || 0}、👎 ${d.helpfulNo || 0}` : '';
+  status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答、無資料或回報沒幫到）${d.blocked ? `，攔截 ${d.blocked} 則安全提問` : ''}${fbText}。點問題可看 AI 的回答；補好資料後按「已補充」。`);
   const label = { full: ['已回答', 'ok'], partial: ['部分回答', 'warn'], none: ['知識缺口', ''], blocked: ['🛡️ 已攔截', 'staff'] };
   const rows = $('gapOnly').checked ? d.gaps : d.recent;
   $('logList').innerHTML = rows.length ? rows.map(r => {
     const [t, c] = label[r.status] || label.full;
-    const btn = r.status === 'full' || r.status === 'blocked' ? '' : r.resolved
+    const isGap = r.status === 'partial' || r.status === 'none' || r.helpful === false;
+    const btn = !isGap || r.status === 'blocked' ? '' : r.resolved
       ? `<button class="ghost" data-undo="${r.id}">取消已補</button>`
       : `<button class="ghost" data-res="${r.id}">已補充</button>`;
+    const fb = r.helpful === true ? ' <span class="tag ok">👍 有幫助</span>'
+      : r.helpful === false ? ' <span class="tag">👎 沒幫到</span>' : '';
     return `<tr><td><details><summary>${r.role === 'staff' ? '<span class="tag staff">行政</span> ' : ''}${esc(r.question)}</summary><div class="ans">${esc(r.answer || '')}</div></details></td>
-      <td><span class="tag ${c}">${r.resolved && r.status !== 'blocked' ? '已補充' : t}</span></td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
+      <td><span class="tag ${c}">${r.resolved && r.status !== 'blocked' ? '已補充' : t}</span>${fb}</td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
   }).join('') : '<tr><td colspan="4" class="status">目前沒有待補的缺口 🎉</td></tr>';
   document.querySelectorAll('[data-res],[data-undo]').forEach(b => b.onclick = async () => {
     b.disabled = true;

@@ -103,3 +103,13 @@ body.staff header p, body.staff header .links a { color: #9db5a8; }
 .top-item .meta { font-size: .8rem; color: var(--muted); }
 .top-item .ex { font-size: .85rem; color: #444; margin: 4px 0 0; padding-left: 1.1em; }
 .badge-int { font-size: .72rem; background: #e8eef8; color: #2b4c86; border-radius: 999px; padding: 1px 8px; margin-left: 4px; }
+.fb { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); }
+.fb button { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 2px 10px; font: inherit; font-size: .78rem; color: var(--text); cursor: pointer; }
+.fb button:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+.fb button.picked { background: var(--green-soft); border-color: var(--green); color: var(--green-dark); font-weight: 600; }
+.fb button:disabled { opacity: .65; cursor: default; }
+.tabs .new-chat { margin-left: auto; background: none; color: var(--muted); }
+.tabs .new-chat:hover { border-color: var(--green); color: var(--green); }
+.filter-bar { display: flex; gap: 8px; margin: 10px 0; }
+.filter-bar input[type=text] { flex: 1; }
+.filter-bar select.aud { width: auto; min-width: 120px; }
