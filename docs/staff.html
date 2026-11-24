@@ -49,8 +49,11 @@
           </div>
         </div>
       </main>
+      <div class="img-preview" id="imgPreview" hidden></div>
       <form class="ask" id="form">
-        <textarea id="q" rows="1" placeholder="輸入問題，Enter 送出" required></textarea>
+        <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" hidden>
+        <button class="img-btn" id="pickImg" type="button" title="上傳圖片提問（也可直接 Ctrl+V 貼上截圖）">📷</button>
+        <textarea id="q" rows="1" placeholder="輸入問題或貼上截圖，Enter 送出"></textarea>
         <button class="primary" id="send" type="submit">送出</button>
       </form>
     </div>
@@ -93,7 +96,7 @@
 <script src="common.js"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview } = window.APP_UI;
+const { esc, md, cleanPreview, readImage } = window.APP_UI;
 const $ = id => document.getElementById(id);
 let KEY = '';
 try { KEY = sessionStorage.getItem('staff_key') || ''; } catch {}
@@ -201,16 +204,43 @@ function restoreTurns() {
     }
   } catch {}
 }
+const imgFile = $('imgFile'), imgPreview = $('imgPreview');
+let pendingImg = null;
+function clearPendingImg() {
+  pendingImg = null; imgFile.value = ''; imgPreview.hidden = true; imgPreview.innerHTML = '';
+}
+async function attachImage(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  try {
+    pendingImg = await readImage(file);
+    imgPreview.innerHTML = `<img src="${pendingImg.previewUrl}" alt="預覽"><span>已附加圖片（可直接送出或補充問題）</span><button type="button" id="rmImg">✕</button>`;
+    imgPreview.hidden = false;
+    $('rmImg').onclick = clearPendingImg;
+    q.focus();
+  } catch (e) { alert(e.message); }
+}
+$('pickImg').onclick = () => imgFile.click();
+imgFile.onchange = () => { if (imgFile.files[0]) attachImage(imgFile.files[0]); };
+q.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
+  if (item) { e.preventDefault(); attachImage(item.getAsFile()); }
+});
 async function ask(question) {
   question = question.trim();
-  if (!question) return;
-  add('user', esc(question));
+  const img = pendingImg;
+  if (!question && !img) return;
+  clearPendingImg();
+  const displayQ = question || '（已上傳圖片）';
+  const userHtml = (img ? `<img class="chat-img" src="${img.previewUrl}" alt="上傳圖片">` : '') + (question ? `<div>${esc(question)}</div>` : '');
+  add('user', userHtml);
   const bubble = add('bot', '<span class="typing"><span></span><span></span><span></span></span>');
   send.disabled = true;
   try {
+    const payload = { action: 'chat', question, history: history.slice(-4), staff_key: KEY, stream: true };
+    if (img) payload.image = { mimeType: img.mimeType, data: img.data };
     const r = await fetch(URL_, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'chat', question, history: history.slice(-4), staff_key: KEY, stream: true }),
+      body: JSON.stringify(payload),
     });
     if (r.status === 401) { const d = await r.json().catch(() => ({})); logout(); throw new Error(d.error || '請重新登入'); }
     if (r.headers.get('content-type')?.includes('text/event-stream') && r.body) {
@@ -238,11 +268,11 @@ async function ask(question) {
         }
       }
       if (!doneData) throw new Error('連線中斷，請再試一次');
-      renderFinal(bubble, question, doneData);
+      renderFinal(bubble, displayQ, doneData);
     } else {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-      renderFinal(bubble, question, d);
+      renderFinal(bubble, displayQ, d);
     }
   } catch (e) {
     bubble.innerHTML = `<span style="color:#b3261e">${esc(e.message)}</span>`;

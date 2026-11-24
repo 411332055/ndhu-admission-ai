@@ -288,17 +288,34 @@ async function geminiStreamFetch(path: string, body: unknown) {
   }
 }
 
-async function chat(question: string, history: { role: string; content: string }[] = [], role: "student" | "staff" = "student", ip = "unknown", stream = false) {
+async function chat(
+  question: string,
+  history: { role: string; content: string }[] = [],
+  role: "student" | "staff" = "student",
+  ip = "unknown",
+  stream = false,
+  image?: { mimeType?: string; data?: string } | null,
+) {
   const staff = role === "staff";
+  let imgPart: { mimeType: string; data: string } | null = null;
+  if (image && (image.data || image.mimeType)) {
+    const m = String(image.mimeType ?? "").toLowerCase().trim();
+    const okMime = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"].includes(m);
+    const clean = String(image.data ?? "").replace(/^data:[^;]+;base64,/, "").trim();
+    if (!okMime || !clean) return json({ error: "圖片格式不支援（請使用 JPG、PNG、WebP）" }, 400);
+    if (clean.length > 8 * 1024 * 1024) return json({ error: "圖片太大，請換一張較小的圖片" }, 413);
+    imgPart = { mimeType: m === "image/jpg" ? "image/jpeg" : m, data: clean };
+  }
   question = String(question ?? "").trim().slice(0, 500);
+  if (!question && imgPart) question = "請說明這張圖片的內容，並結合東華大學入學規定回答我該注意什麼。";
   if (!question) return json({ error: "請輸入問題" }, 400);
   if (SENSITIVE.test(question)) {
-    await sb.from("chat_logs").insert({ question, answer: BLOCKED_ANSWER, sources: [], answered: false, status: "blocked", role, resolved: true });
+    await sb.from("chat_logs").insert({ question: imgPart ? `[圖片] ${question}` : question, answer: BLOCKED_ANSWER, sources: [], answered: false, status: "blocked", role, resolved: true });
     return json({ answer: BLOCKED_ANSWER, sources: [], internal: [], top_score: null });
   }
 
   const hist = Array.isArray(history) ? history : [];
-  const cacheKey = !staff && hist.length === 0 ? `qa:public:${normQ(question)}` : null;
+  const cacheKey = !staff && !imgPart && hist.length === 0 ? `qa:public:${normQ(question)}` : null;
 
   // 平行檢查限流與熱門問題快取
   const [allowed, cachedRes] = await Promise.all([
@@ -349,23 +366,30 @@ async function chat(question: string, history: { role: string; content: string }
 
   const top = hits?.[0]?.similarity ?? null;
 
-  if (!hits?.length) {
+  const logQuestion = imgPart ? `[圖片] ${question}` : question;
+
+  if (!hits?.length && !imgPart) {
     const answer = staff
       ? "目前知識庫沒有這項內部資料，歡迎把處理經驗寫成筆記分享，審核後會加入知識庫。"
       : "目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）。";
     const { data: logRow } = await sb.from("chat_logs").insert({
-      question, answer, sources: [], top_score: top, answered: false, status: "none", role,
+      question: logQuestion, answer, sources: [], top_score: top, answered: false, status: "none", role,
     }).select("id").single();
     return json({ answer, sources: [], internal: [], top_score: top, log_id: logRow?.id ?? null });
   }
 
-  const ctx = hits.map((h: any, i: number) =>
-    `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${h.content}`).join("\n\n");
-  const contents = hist.slice(-4).map((m) => ({
+  const ctx = hits.length
+    ? hits.map((h: any, i: number) =>
+        `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${h.content}`).join("\n\n")
+    : "（知識庫暫無直接對應文字，請先判讀使用者上傳的圖片內容並誠實說明；涉及未記載的東華規定請勿自行編造，建議洽詢教務處綜合業務組 03-8906143。）";
+  const contents: any[] = hist.slice(-4).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: String(m.content).slice(0, 1500) }],
   }));
-  contents.push({ role: "user", parts: [{ text: `參考資料：\n${ctx}\n\n問題：${question}` }] });
+  const userParts: any[] = [];
+  if (imgPart) userParts.push({ inlineData: imgPart });
+  userParts.push({ text: `參考資料：\n${ctx}\n\n問題：${question}` });
+  contents.push({ role: "user", parts: userParts });
   const reqBody = {
     systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
     contents,
@@ -419,7 +443,7 @@ async function chat(question: string, history: { role: string; content: string }
           const { sources: finalSources, usedHits } = pickSources(hits, status, usedIndices);
           const finalInternal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
           const { data: logRow } = await sb.from("chat_logs").insert({
-            question, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
+            question: logQuestion, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
           }).select("id").single();
           if (cacheKey && status === "full") {
             await sb.from("app_cache").upsert({
@@ -460,7 +484,7 @@ async function chat(question: string, history: { role: string; content: string }
   const internal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
 
   const { data: logRow } = await sb.from("chat_logs").insert({
-    question, answer, sources, top_score: top, answered: status === "full", status, role,
+    question: logQuestion, answer, sources, top_score: top, answered: status === "full", status, role,
   }).select("id").single();
   if (cacheKey && status === "full") {
     await sb.from("app_cache").upsert({
@@ -810,9 +834,9 @@ Deno.serve(async (req) => {
     if (action === "chat") {
       if (body.staff_key !== undefined) {
         if (!isStaff(body.staff_key)) return await rejectAuth("行政人員密碼錯誤");
-        return await chat(body.question, body.history, "staff", ip, !!body.stream);
+        return await chat(body.question, body.history, "staff", ip, !!body.stream, body.image);
       }
-      return await chat(body.question, body.history, "student", ip, !!body.stream);
+      return await chat(body.question, body.history, "student", ip, !!body.stream, body.image);
     }
     if (action === "feedback") return await feedback(Number(body.id), body.helpful, ip);
     if (action === "process_queue") return await processQueue();

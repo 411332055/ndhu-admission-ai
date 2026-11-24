@@ -31,5 +31,27 @@ window.APP_UI = (() => {
   function cleanPreview(t) {
     return String(t ?? '').replace(/\s*[【\[]\s*(完整|部分|無資料)?(?:\s*[|｜:：]\s*[\d,\s、]*)?\s*[】\]]?\s*$/, '').trim();
   }
-  return { esc, linkify, md, cleanPreview };
+  function readImage(file, maxDim = 1600) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          const s = maxDim / Math.max(w, h);
+          w = Math.round(w * s); h = Math.round(h * s);
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        const mimeType = file.type === 'image/png' && file.size < 1.5 * 1024 * 1024 ? 'image/png' : 'image/jpeg';
+        const dataUrl = c.toDataURL(mimeType, 0.85);
+        resolve({ mimeType, data: dataUrl.split(',')[1], previewUrl: dataUrl });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('圖片讀取失敗')); };
+      img.src = url;
+    });
+  }
+  return { esc, linkify, md, cleanPreview, readImage };
 })();
