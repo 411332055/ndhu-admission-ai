@@ -207,5 +207,57 @@ window.APP_UI = (() => {
     const qNorm = norm(question);
     return pool.filter(x => norm(x) !== qNorm).slice(0, 3);
   }
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups };
+  function initTheme(btn) {
+    const apply = t => {
+      document.documentElement.dataset.theme = t;
+      if (btn) {
+        btn.textContent = t === 'dark' ? '☀️' : '🌙';
+        btn.title = t === 'dark' ? '切換為淺色模式' : '切換為深色模式';
+      }
+    };
+    let saved = '';
+    try { saved = localStorage.getItem('ndhu_theme') || ''; } catch {}
+    if (!saved && window.matchMedia?.('(prefers-color-scheme: dark)').matches) saved = 'dark';
+    apply(saved === 'dark' ? 'dark' : 'light');
+    if (btn) {
+      btn.onclick = () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('ndhu_theme', next); } catch {}
+        apply(next);
+      };
+    }
+  }
+  function openQrModal(url = 'https://411332055.github.io/ndhu-admission-ai/') {
+    let m = document.getElementById('ndhu-qr-modal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'ndhu-qr-modal';
+      m.className = 'lightbox';
+      const qrImg = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=6&data=${encodeURIComponent(url)}`;
+      m.innerHTML = `
+        <div class="qr-card">
+          <h3>📱 手機掃碼開啟 AI 助理</h3>
+          <p>免安裝 App、免登入，掃描即可直接提問與查平面圖</p>
+          <img src="${qrImg}" alt="學生端 QR Code">
+          <div class="qr-url">${esc(url)}</div>
+          <div class="qr-actions">
+            <button type="button" class="primary" id="qrCopy" style="min-height:38px;padding:0 14px;font-size:.85rem">📋 複製網址</button>
+            <button type="button" class="ghost" id="qrClose">關閉</button>
+          </div>
+        </div>`;
+      m.addEventListener('click', e => { if (e.target === m) m.hidden = true; });
+      m.querySelector('#qrClose').onclick = () => { m.hidden = true; };
+      m.querySelector('#qrCopy').onclick = async e => {
+        try {
+          await navigator.clipboard.writeText(url);
+          e.target.textContent = '✅ 已複製';
+          setTimeout(() => e.target.textContent = '📋 複製網址', 1500);
+        } catch {}
+      };
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) m.hidden = true; });
+      document.body.appendChild(m);
+    }
+    m.hidden = false;
+  }
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal };
 })();

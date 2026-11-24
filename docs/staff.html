@@ -11,7 +11,7 @@
 <body class="staff">
 <div class="app">
   <header>
-    <span class="links"><a href="index.html">學生端</a><a href="#" id="logout" hidden>登出</a></span>
+    <span class="links"><a href="index.html">學生端</a><a href="#" id="logout" hidden>登出</a><button type="button" class="link-btn" id="themeBtn" title="切換深色／淺色模式">🌙</button></span>
     <h1>🗂️ 入學行政 AI 助理｜行政人員端</h1>
     <p>內部作業知識・學生常見問題・經驗分享</p>
   </header>
@@ -99,7 +99,8 @@
 <script src="common.js"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups } = window.APP_UI;
+const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme } = window.APP_UI;
+initTheme(document.getElementById('themeBtn'));
 const $ = id => document.getElementById(id);
 let KEY = '';
 try { KEY = sessionStorage.getItem('staff_key') || ''; } catch {}

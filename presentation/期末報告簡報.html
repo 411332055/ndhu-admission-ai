@@ -342,7 +342,7 @@
     </div>
   </div>
   <div class="banner">
-    <span>核心主軸：<span class="em">要解決什麼問題</span>（資訊分散＋重複詢問＋經驗流失） → <span class="em">如何運用 AI</span>（RAG＋SECI） → <span class="em">產生什麼成果</span>（80 份官方文件活知識庫）</span>
+    <span>核心主軸：<span class="em">要解決什麼問題</span>（資訊分散＋重複詢問＋經驗流失） → <span class="em">如何運用 AI</span>（RAG＋SECI＋多模態平面圖） → <span class="em">產生什麼成果</span>（127 份來源・42 張教學樓平面圖活知識庫）</span>
   </div>
   <div class="footer"><span>第十組｜國立東華大學入學行政 AI 助理</span><span>2 / 10</span></div>
 </section>
@@ -361,7 +361,7 @@
       <ul>
         <li><b>使用情境</b>：申請入學、繁星、分發、報到註冊、繳費減免等日常提問。</li>
         <li><b>資料範圍</b>：僅可檢索「公開」官方規定與公告。</li>
-        <li><b>核心功能</b>：即時串流問答、自動附上來源檔名、網址與電話可直接點擊撥號、👍／👎 滿意度回饋。</li>
+        <li><b>核心功能</b>：4 大主題分類快捷提問、<b>🎙️ 語音與截圖提問</b>、<b>🗺️ 教學樓平面圖直出與燈箱放大</b>、搜尋動態動畫、延伸問題推薦、📱 QR Code 分享與 🌙 深色模式。</li>
       </ul>
     </div>
     <div class="card blue">
@@ -379,7 +379,7 @@
       <ul>
         <li><b>使用情境</b>：學年度簡章更新、審核同仁經驗、定期盤點知識缺口。</li>
         <li><b>資料維護</b>：支援上傳 PDF / Word / TXT 與直接貼學校網址匯入，一鍵切換公開／內部。</li>
-        <li><b>品質監控</b>：審核經驗筆記入庫、追蹤 AI 答不完整的缺口、一鍵匯出 CSV 報表分析。</li>
+        <li><b>品質監控</b>：<b>📊 知識管理儀表板（6 項 KM 指標）</b>、6 大自動分類篩選、審核經驗筆記入庫、追蹤知識缺口並一鍵匯出 CSV。</li>
       </ul>
     </div>
   </div>
@@ -397,7 +397,7 @@
     <div class="card">
       <h3>📂 本專題整合的兩大類知識</h3>
       <ul>
-        <li><b>顯性知識（公開官方文件）</b><br>涵蓋 115 學年度各招生管道簡章、新生報到註冊須知、學雜費標準、就學貸款與減免、宿舍申請、獎助學金、行事曆與各單位聯絡方式，共 <b>80 份官方來源、48.5 萬字</b>。</li>
+        <li><b>顯性知識（公開官方文件與平面圖）</b><br>涵蓋 115 學年度各招生管道簡章、新生報到註冊須知、學雜費、學則、3+2 五年一貫、企管系必修與輔修，以及<b>全校 42 張教學樓與館舍平面圖</b>，共 <b>127 份來源、1,085 段</b>。</li>
         <li style="margin-top:12px"><b>隱性知識（行政內部經驗）</b><br>來自教務處綜合業務組的實務經驗：例如學生錯過上傳期限如何補件、延誤繳費怎麼處理、特殊身分要會辦哪個單位，透過「經驗筆記」制度化保存。</li>
       </ul>
     </div>
@@ -443,8 +443,8 @@
       <p>串流輸出讓第一個字<b>不到 1 秒</b>就出現；平行查詢省去排隊等待；熱門問題 6 小時快取達到 <b>0.2 秒秒回</b>。</p>
     </div>
     <div class="card">
-      <h3>🛡️ 免費額度保護</h3>
-      <p>內建每分鐘提問限流防止洗版；若向量額度用完，自動切換「中文雙字詞關鍵字檢索」備援，服務不中斷。</p>
+      <h3>🛡️ 免費額度保護與高可用備援</h3>
+      <p>內建限流、<b>73 組口語同義詞展開</b>與關鍵字檢索備援；主模型尖峰 503 時自動切換備援模型，平面圖支援降級直出，服務不中斷。</p>
     </div>
     <div class="card">
       <h3>🔒 資料庫層級權限隔離</h3>
@@ -463,12 +463,12 @@
   </div>
   <div class="grid-6">
     <div class="card green">
-      <h3>1. 嚴謹防幻覺機制</h3>
-      <p>系統提示強制「只依參考資料回答」、日期金額逐字一致；查無資料時誠實告知並提供綜合業務組電話，絕不胡編。</p>
+      <h3>1. 嚴謹防幻覺與情緒價值</h3>
+      <p>強制「只依參考資料回答」、日期金額逐字一致；查無資料時先溫暖肯定提問再誠摯致歉，並附上教務處電話，絕不胡編。</p>
     </div>
     <div class="card">
-      <h3>2. 多輪追問語境理解</h3>
-      <p>學生先問「申請入學什麼時候報名？」，再追問「那要繳多少錢？」時，系統自動帶入上一輪主題檢索，不答非所問。</p>
+      <h3>2. 多模態互動與平面圖直出</h3>
+      <p>支援<b>🎙️ 語音提問</b>、貼圖提問與多輪追問；問到校園與各教學樓時直接附上 <b>42 張官方平面圖</b>，支援全螢幕燈箱放大檢視。</p>
     </div>
     <div class="card">
       <h3>3. 安全攔截與防越獄</h3>
@@ -500,8 +500,8 @@
   <div>
     <div class="demo-row">
       <div class="demo-time">0:00–1:00</div>
-      <div class="demo-title">🎓 學生端即時問答</div>
-      <div class="demo-desc">點選範例問題展現快取秒回 → 追問相關細節展現串流輸出與語境理解 → 展示來源出處、可點擊連結與 👍／👎 回饋。</div>
+      <div class="demo-title">🎓 學生端多模態問答</div>
+      <div class="demo-desc">展示 4 大主題分類、🎙️ 語音／快捷查詢「<b>管理學院平面圖</b>」→ 呈現搜尋動態動畫、平面圖卡片點擊燈箱放大與「💡 你可能還想問」延伸推薦。</div>
     </div>
     <div class="demo-row">
       <div class="demo-time">1:00–1:30</div>
@@ -515,8 +515,8 @@
     </div>
     <div class="demo-row">
       <div class="demo-time">2:30–3:30</div>
-      <div class="demo-title">📚 管理後台知識治理</div>
-      <div class="demo-desc">審核剛剛送出的經驗筆記加入內部庫 → 展示 80 份來源清單與公開/內部篩選 → 檢視知識缺口並一鍵匯出 CSV 報表。</div>
+      <div class="demo-title">📚 管理後台 KM 治理</div>
+      <div class="demo-desc">展示頂部 <b>📊 知識管理儀表板（127 份來源・42 張平面圖・缺口歸零）</b> → 6 大自動分類篩選 → 審核經驗筆記入庫與匯出 CSV。</div>
     </div>
   </div>
   <div class="url-bar">
@@ -536,19 +536,19 @@
   </div>
   <div class="grid-4" style="margin-bottom:22px">
     <div class="kpi">
-      <div class="num">80</div>
-      <div class="unit">份官方來源文件</div>
-      <div class="desc">涵蓋 115 學年度入學各管道與須知</div>
+      <div class="num">127</div>
+      <div class="unit">份知識來源（1,085 段）</div>
+      <div class="desc">公開 112 份 ＋ 內部 15 份</div>
     </div>
     <div class="kpi">
-      <div class="num">1,033</div>
-      <div class="unit">個語意知識段落</div>
-      <div class="desc">768 維向量＋雙字詞混合檢索</div>
+      <div class="num">42</div>
+      <div class="unit">張官方教學樓平面圖</div>
+      <div class="desc">全校・管院・理工・人社・圖資・行政</div>
     </div>
     <div class="kpi">
-      <div class="num">48.5萬</div>
-      <div class="unit">字知識涵蓋量</div>
-      <div class="desc">相當於數十份完整簡章與辦法</div>
+      <div class="num">73</div>
+      <div class="unit">組口語同義詞對照</div>
+      <div class="desc">自動轉譯「學貸、二一、3+2」等口語</div>
     </div>
     <div class="kpi">
       <div class="num">$0</div>
@@ -560,17 +560,17 @@
     <div class="card white">
       <h3>✅ 系統完成度與驗證紀錄</h3>
       <ul>
-        <li>已完成 <b>學生端、行政人員端、管理後台</b> 三套網頁並正式部署上線。</li>
-        <li>累積 <b>50+ 則</b>系統實測問答紀錄，安全注入與密碼探測攔截率 <b>100%</b>。</li>
-        <li>支援 PDF、Word、TXT 與網頁網址一鍵匯入，大型簡章亦可分段自動轉錄。</li>
+        <li>已完成 <b>學生端、行政人員端、管理後台</b> 三套網頁（含深色模式、語音提問與 QR Code 分享）並正式上線。</li>
+        <li>累積 <b>70+ 則</b>系統實測問答紀錄，安全注入與密碼探測攔截率 <b>100%</b>，全站自動健檢 <b>0 錯誤、0 破圖</b>。</li>
+        <li>支援 PDF、Word、TXT、圖片 OCR 與網址一鍵匯入，大型簡章亦可分段自動轉錄。</li>
       </ul>
     </div>
     <div class="card gold">
-      <h3>📊 組內正確率實測摘要</h3>
+      <h3>📊 知識缺口閉環改善實例</h3>
       <ul>
-        <li>測試方式：組員依常見入學情境進行多題實測，驗證回答與官方簡章是否一致。</li>
-        <li>驗證重點：日期與金額準確度、來源附註正確性、查無資料時是否誠實拒答。</li>
-        <li><b>實測結果</b>：（※ 組員測完後可透過後台「匯出 CSV」填入最終正確率）</li>
+        <li>透過後台儀表板盤點出 <b>13 則待補缺口</b>（包含二一學則、學分上限、3+2 五年一貫、企管系必修與輔修、新生社團與管院平面圖）。</li>
+        <li>經查證東華官網正式規定並補齊 5 份文件、42 張平面圖與口語同義詞後，<b>成功將待補知識缺口歸零（13 → 0）</b>。</li>
+        <li>（※ 上台前可再透過後台「匯出 CSV」補上組員最終盲測正確率）</li>
       </ul>
     </div>
   </div>
@@ -615,8 +615,8 @@
     <div class="cover-badge">THANK YOU｜感謝聆聽</div>
     <h1 style="margin:28px 0 22px;font-size:52px">讓官方知識找得到，<br>讓行政經驗留得下。</h1>
     <p class="lead" style="margin-bottom:36px">
-      解決入學資訊分散與經驗斷層 → 運用 RAG 與 SECI 模型打造雙端 AI 助理<br>
-      → 建置 80 份文件、48.5 萬字的零成本活知識庫
+      解決入學資訊分散與經驗斷層 → 運用 RAG、多模態平面圖與 SECI 模型打造雙端 AI 助理<br>
+      → 建置 127 份來源、42 張平面圖、缺口歸零的零成本活知識庫
     </p>
     <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:18px;font-weight:700">
       <div style="background:rgba(255,255,255,.15);padding:12px 22px;border-radius:12px">歡迎老師與同學提問指教（Q&amp;A）</div>
