@@ -55,7 +55,8 @@
       <form class="ask" id="form">
         <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" hidden>
         <button class="img-btn" id="pickImg" type="button" title="上傳圖片提問（也可直接 Ctrl+V 貼上截圖）">📷</button>
-        <textarea id="q" rows="1" placeholder="輸入問題或貼上截圖，Enter 送出"></textarea>
+        <button class="img-btn voice-btn" id="voiceBtn" type="button" title="語音提問（點擊說話）">🎙️</button>
+        <textarea id="q" rows="1" placeholder="輸入問題、點擊麥克風說話或貼上截圖，Enter 送出"></textarea>
         <button class="primary" id="send" type="submit">送出</button>
       </form>
     </div>
@@ -98,7 +99,7 @@
 <script src="common.js"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards } = window.APP_UI;
+const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups } = window.APP_UI;
 const $ = id => document.getElementById(id);
 let KEY = '';
 try { KEY = sessionStorage.getItem('staff_key') || ''; } catch {}
@@ -171,8 +172,13 @@ function renderFinal(bubble, question, d, persist = true) {
   if (d.images?.length) html += renderImages(d.images);
   if (d.sources?.length) html += `<div class="sources"><span>📄 資料來源：</span>${d.sources.map(s =>
     `<span class="src-pill">${esc(s)}${d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : ''}</span>`).join('')}</div>`;
+  const fups = suggestFollowups(question, d.sources || [], true);
+  if (fups.length) {
+    html += `<div class="followups"><span class="followups-label">💡 延伸查詢：</span>${fups.map(f => `<button type="button" class="followup-chip">${esc(f)}</button>`).join('')}</div>`;
+  }
   bubble.innerHTML = html;
   bindImageCards(bubble);
+  bubble.querySelectorAll('.followup-chip').forEach(b => b.onclick = () => ask(b.textContent));
   const bar = document.createElement('div');
   bar.className = 'fb';
   const cp = document.createElement('button');
@@ -304,6 +310,7 @@ $('newChat').onclick = () => {
 form.addEventListener('submit', e => { e.preventDefault(); const v = q.value; q.value = ''; q.style.height = ''; ask(v); });
 q.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
 q.addEventListener('input', () => { q.style.height = 'auto'; q.style.height = q.scrollHeight + 'px'; });
+bindVoice($('voiceBtn'), q, text => { q.value = ''; q.style.height = ''; ask(text); });
 bindChips();
 
 // ── 熱門問題 ──

@@ -132,5 +132,80 @@ window.APP_UI = (() => {
       card.onclick = () => openLightbox(card.dataset.url, card.dataset.cap);
     });
   }
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards };
+  function bindVoice(btn, input, onSubmit) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      btn.title = '此瀏覽器不支援語音輸入（建議使用 Chrome / Edge）';
+      btn.onclick = () => alert('此瀏覽器目前不支援語音辨識，建議使用 Chrome 或 Edge 瀏覽器體驗語音提問！');
+      return;
+    }
+    let rec = null, listening = false;
+    const origPlaceholder = input.placeholder;
+    const stopUI = () => {
+      listening = false;
+      btn.classList.remove('listening');
+      btn.textContent = '🎙️';
+      input.placeholder = origPlaceholder;
+    };
+    btn.onclick = () => {
+      if (listening && rec) { rec.stop(); return; }
+      rec = new SR();
+      rec.lang = 'zh-TW';
+      rec.interimResults = true;
+      rec.continuous = false;
+      let finalText = '';
+      rec.onstart = () => {
+        listening = true;
+        btn.classList.add('listening');
+        btn.textContent = '⏹️';
+        input.placeholder = '🎙️ 請開始說話，說完會自動送出…';
+      };
+      rec.onresult = e => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) finalText += t;
+          else interim += t;
+        }
+        input.value = (finalText + interim).trim();
+        input.style.height = 'auto';
+        input.style.height = input.scrollHeight + 'px';
+      };
+      rec.onerror = e => {
+        stopUI();
+        if (e.error === 'not-allowed') alert('請允許瀏覽器使用麥克風權限，才能使用語音提問喔！');
+      };
+      rec.onend = () => {
+        const text = (finalText || input.value).trim();
+        stopUI();
+        if (text && onSubmit) onSubmit(text);
+      };
+      try { rec.start(); } catch { stopUI(); }
+    };
+  }
+  function suggestFollowups(question, sources = [], isStaff = false) {
+    const ctx = `${question || ''} ${(sources || []).join(' ')}`;
+    let pool;
+    if (isStaff) {
+      if (/平面圖|地圖|大樓|樓層/.test(ctx)) {
+        pool = ['東華校園導覽平面圖', '行政大樓總務處平面圖', '人社一館平面圖'];
+      } else if (/報到|補件|逾期|畢業證書/.test(ctx)) {
+        pool = ['延誤繳費的處理流程？', '新生最常打電話問什麼？', '學生忘記單一簽入密碼怎麼處理？'];
+      } else {
+        pool = ['學生錯過報到資料上傳期限怎麼處理？', '新生最常打電話問什麼？', '延誤繳費的處理流程？'];
+      }
+    } else if (/平面圖|地圖|配置圖|管院|管理學院|理工|人社|圖書館|資訊中心|行政大樓/.test(ctx)) {
+      pool = ['東華校園導覽平面圖', '管理學院平面圖', '人社一館平面圖', '理工二館三樓平面圖', '圖書館三樓平面圖'];
+    } else if (/學雜費|繳費|學貸|貸款|減免|獎學金|補助/.test(ctx)) {
+      pool = ['就學貸款怎麼申請？', '學雜費減免與獎學金資格？', '學雜費可以怎麼繳？', '新生宿舍怎麼申請與進住？'];
+    } else if (/宿舍|住宿|體檢|健檢|兵役|交通|志學/.test(ctx)) {
+      pool = ['新生體檢要注意什麼？', '怎麼從志學火車站到東華？', '東華校園導覽平面圖', '學雜費可以怎麼繳？'];
+    } else {
+      pool = ['新生報到要準備什麼？', '忘記上傳畢業證書怎麼辦？', '學雜費可以怎麼繳？', '東華校園導覽平面圖'];
+    }
+    const norm = s => String(s || '').replace(/[\s？?。！!]/g, '');
+    const qNorm = norm(question);
+    return pool.filter(x => norm(x) !== qNorm).slice(0, 3);
+  }
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups };
 })();

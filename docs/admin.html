@@ -27,6 +27,12 @@
       <div class="status" id="loginStatus"></div>
     </section>
 
+    <section class="panel" id="kmDash" hidden>
+      <h2>📊 知識管理儀表板（KM 指標總覽）</h2>
+      <div class="status">即時彙整知識庫規模、AI 回答完整率、使用者滿意度與 SECI 經驗外化成果（可直接截圖放進期末簡報）。</div>
+      <div class="kpi-grid" id="kpiGrid"></div>
+    </section>
+
     <section class="panel">
       <h2>新增 / 更新知識</h2>
       <label>上傳檔案（.txt .md .pdf .docx .png .jpg .webp，可多選；檔名會當作來源名稱。公開圖片如平面圖會同時保留原圖，提問時自動顯示！）</label>
@@ -50,7 +56,7 @@
       <select id="aud2" class="aud"><option value="public">公開</option><option value="staff">內部（只限行政人員）</option></select>
       <div class="row">
         <button class="primary" id="importUrls">匯入</button>
-        <button class="ghost" id="fillMaps" type="button" title="一鍵快速匯入全校 29 張教學樓與館舍平面圖（不消耗 Gemini 對話額度）">🗺️ 一鍵極速匯入 29 張平面圖</button>
+        <button class="ghost" id="fillMaps" type="button" title="一鍵快速匯入全校 41 張教學樓與館舍平面圖（不消耗 Gemini 對話額度）">🗺️ 一鍵極速匯入 41 張平面圖</button>
         <span class="status" id="urlStatus">PDF 或圖片由 Gemini 轉成文字，圖片會保留原圖供問答顯示</span>
       </div>
     </section>
@@ -194,10 +200,74 @@ function renderSources() {
     await api({ action: 'delete', source: b.dataset.del }); loadSources();
   });
 }
+let lastStatsData = null, lastNotesData = [];
+function renderDashboard() {
+  if (!allSources.length && !lastStatsData) return;
+  $('kmDash').hidden = false;
+  const pub = allSources.filter(s => s.audience !== 'staff').length;
+  const stf = allSources.length - pub;
+  const chunks = allSources.reduce((a, x) => a + Number(x.chunks || 0), 0);
+  const maps = allSources.filter(s => classifySource(s) === 'map').length;
+
+  let ansRate = '—', ansPct = 0, validCnt = 0;
+  let satRate = '待收集', satSub = '尚無使用者回饋', satPct = 0;
+  let gapCnt = '—', gapSub = '載入中…';
+  if (lastStatsData) {
+    const valid = (lastStatsData.recent || []).filter(r => r.status !== 'blocked');
+    validCnt = valid.length;
+    const full = valid.filter(r => r.status === 'full').length;
+    if (validCnt) { ansPct = Math.round(full * 100 / validCnt); ansRate = `${ansPct}%`; }
+    const yes = lastStatsData.helpfulYes || 0, no = lastStatsData.helpfulNo || 0;
+    if (yes + no > 0) {
+      satPct = Math.round(yes * 100 / (yes + no));
+      satRate = `${satPct}%`;
+      satSub = `👍 ${yes} 次有幫助 ／ 👎 ${no} 次`;
+    }
+    gapCnt = String(lastStatsData.unanswered ?? 0);
+    gapSub = lastStatsData.unanswered ? '需補充知識或經驗' : '已全數補齊 🎉';
+  }
+  const approvedNotes = lastNotesData.filter(n => n.status === 'approved').length;
+  const pendingNotes = lastNotesData.filter(n => n.status === 'pending').length;
+
+  $('kpiGrid').innerHTML = `
+    <div class="kpi-card">
+      <span class="kpi-label">📚 知識庫總量</span>
+      <span class="kpi-val">${allSources.length} 份</span>
+      <span class="kpi-sub">公開 ${pub} ／ 內部 ${stf}（${chunks} 段）</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">🗺️ 教學樓平面圖</span>
+      <span class="kpi-val">${maps} 張</span>
+      <span class="kpi-sub">支援問答直出與燈箱放大</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">🎯 AI 完整回答率</span>
+      <span class="kpi-val">${ansRate}</span>
+      <span class="kpi-sub">統計最近 ${validCnt} 則有效提問</span>
+      <div class="kpi-bar"><span style="width:${ansPct}%"></span></div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">👍 使用者滿意度</span>
+      <span class="kpi-val">${satRate}</span>
+      <span class="kpi-sub">${satSub}</span>
+      <div class="kpi-bar"><span style="width:${satPct}%"></span></div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">🧩 待補知識缺口</span>
+      <span class="kpi-val">${gapCnt} 則</span>
+      <span class="kpi-sub">${gapSub}</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">💡 SECI 經驗筆記</span>
+      <span class="kpi-val">${approvedNotes} 則</span>
+      <span class="kpi-sub">已入庫（待審核 ${pendingNotes} 則）</span>
+    </div>`;
+}
 async function loadSources() {
   const { sources } = await api({ action: 'list' });
   allSources = sources;
   renderSources();
+  renderDashboard();
 }
 $('srcSearch').oninput = renderSources;
 $('srcFilter').onchange = renderSources;
@@ -205,7 +275,9 @@ $('srcFilter').onchange = renderSources;
 let lastLogs = [];
 async function loadStats() {
   const d = await api({ action: 'stats' });
+  lastStatsData = d;
   lastLogs = d.recent || [];
+  renderDashboard();
   $('exportCsv').disabled = !lastLogs.length;
   const fbText = (d.helpfulYes || d.helpfulNo) ? `；使用者回饋 👍 ${d.helpfulYes || 0}、👎 ${d.helpfulNo || 0}` : '';
   status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答、無資料或回報沒幫到）${d.blocked ? `，攔截 ${d.blocked} 則安全提問` : ''}${fbText}。點問題可看 AI 的回答；補好資料後按「已補充」。`);
@@ -249,6 +321,8 @@ $('exportCsv').onclick = () => {
 
 async function loadNotes() {
   const { notes } = await api({ action: 'notes' });
+  lastNotesData = notes || [];
+  renderDashboard();
   const pending = notes.filter(n => n.status === 'pending');
   status('noteSummary', `待審核 ${pending.length} 則，共 ${notes.length} 則。通過的筆記會加入「內部」知識庫，只有行政人員查得到。`);
   const label = { pending: ['待審核', 'warn'], approved: ['已通過', 'ok'], rejected: ['未採用', ''] };
@@ -434,6 +508,18 @@ $('fillMaps').onclick = async () => {
     ['圖資大樓B棟資訊中心三樓平面圖', 'https://lic.ndhu.edu.tw/var/file/7/1007/pictures/527/m/mczh-tw700x700_large4398_245059790758.jpg', '國立東華大學圖資大樓B棟（資訊中心）三樓（3F）平面圖暨逃生路線圖，包含電腦教室與機房空間。'],
     ['行政大樓總務處各組位置平面圖（一）', 'https://rb006.ndhu.edu.tw/var/file/6/1006/pictures/76/m/mczh-tw1600x1600_large47693_466369845559.jpg', '國立東華大學行政大樓總務處各組辦公室位置平面圖（事務組、出納組、營繕組、保管組等位置）。'],
     ['行政大樓總務處各組位置平面圖（二）', 'https://rb006.ndhu.edu.tw/var/file/6/1006/pictures/76/m/mczh-tw1600x1600_large49474_310308639438.png', '國立東華大學行政大樓總務處各組辦公室位置平面圖（第二張，行政大樓樓層與各組位置指引）。'],
+    ['人社一館平面圖（一）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss1_p1.jpg', '國立東華大學人文社會科學學院人社一館（文館）平面圖第1頁，包含教室編號、系所辦公室與空間配置。'],
+    ['人社一館平面圖（二）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss1_p2.jpg', '國立東華大學人文社會科學學院人社一館（文館）平面圖第2頁，包含各樓層教室與研究室配置。'],
+    ['人社一館平面圖（三）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss1_p3.jpg', '國立東華大學人文社會科學學院人社一館（文館）平面圖第3頁，包含樓層教室、研討室與空間配置。'],
+    ['人社一館平面圖（四）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss1_p4.jpg', '國立東華大學人文社會科學學院人社一館（文館）平面圖第4頁，包含樓層空間與研究室配置。'],
+    ['人社二館平面圖（一）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss2_p1.jpg', '國立東華大學人文社會科學學院人社二館（共同教學大樓／共館）平面圖第1頁，包含教室編號與公共空間配置。'],
+    ['人社二館平面圖（二）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss2_p2.jpg', '國立東華大學人文社會科學學院人社二館（共館）平面圖第2頁，包含各樓層教室、講堂與系所空間配置。'],
+    ['人社二館平面圖（三）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss2_p3.jpg', '國立東華大學人文社會科學學院人社二館（共館）平面圖第3頁，包含樓層教室與研討室位置。'],
+    ['人社二館平面圖（四）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss2_p4.jpg', '國立東華大學人文社會科學學院人社二館（共館）平面圖第4頁，包含樓層教室與研究室配置。'],
+    ['人社二館平面圖（五）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss2_p5.jpg', '國立東華大學人文社會科學學院人社二館（共館）平面圖第5頁，包含高樓層空間與研究室配置。'],
+    ['人社三館平面圖（一）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss3_p1.jpg', '國立東華大學人文社會科學學院人社三館平面圖第1頁，包含教室、演講廳與系所空間配置。'],
+    ['人社三館平面圖（二）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss3_p2.jpg', '國立東華大學人文社會科學學院人社三館平面圖第2頁，包含樓層教室與研究室位置。'],
+    ['人社三館平面圖（三）', 'https://411332055.github.io/ndhu-admission-ai/maps/hss3_p3.jpg', '國立東華大學人文社會科學學院人社三館平面圖第3頁，包含樓層空間與研究室配置。'],
   ];
   $('fillMaps').disabled = true;
   let ok = 0, fail = 0;
@@ -446,7 +532,7 @@ $('fillMaps').onclick = async () => {
       ok++;
     } catch (e) { fail++; console.error(source, e); }
   }
-  status('urlStatus', `極速匯入完成：共 ${ok} 張可用${fail ? `，失敗 ${fail} 張` : '（全校 29 張平面圖已全部就位 🎉）'}`, fail ? 'err' : 'ok');
+  status('urlStatus', `極速匯入完成：共 ${ok} 張可用${fail ? `，失敗 ${fail} 張` : '（全校 41 張平面圖已全部就位 🎉）'}`, fail ? 'err' : 'ok');
   $('fillMaps').disabled = false;
   loadSources();
 };
