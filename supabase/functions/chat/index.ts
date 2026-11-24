@@ -2,8 +2,9 @@
 // 動作：
 //   chat     { question, history? }              → RAG 問答（公開）
 //   feedback { id, helpful }                     → 使用者回饋 👍/👎（公開）
-//   ingest   { admin_key, source, text }         → 新增知識（管理員）
-//   ingest_url { admin_key, url, source }        → 從網址下載 PDF / 網頁並加入知識（管理員）
+//   ingest       { admin_key, source, text }         → 新增知識（管理員）
+//   ingest_image { admin_key, source, mimeType, data } → 上傳圖片由 Gemini 轉文字入庫（管理員）
+//   ingest_url   { admin_key, url, source }          → 從網址下載 PDF / 網頁 / 圖片並加入知識（管理員）
 //   pdf_prepare / pdf_part                       → 大型 PDF 分段匯入（管理員）
 //   list   { admin_key }                       → 列出知識來源（管理員）
 //   delete { admin_key, source }                 → 刪除某個來源（管理員）
@@ -516,12 +517,38 @@ function toBase64(buf: Uint8Array) {
   return btoa(s);
 }
 
+const IMAGE_OCR_PROMPT = "請把這張圖片中的所有資訊完整轉成繁體中文純文字。規則：逐字保留所有日期、時間、金額、名額、電話、網址、地點與單位名稱；若是表格或流程圖，請依步驟或「欄位 | 欄位」清楚條列；不要摘要、不要省略、不要加入額外說明或評論。";
+
+async function ingestImage(source: string, mimeType: string, dataBase64: string, audience = "public") {
+  source = String(source ?? "").trim().slice(0, 200);
+  mimeType = String(mimeType ?? "").toLowerCase().trim();
+  const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
+  if (!source) return json({ error: "需要來源名稱" }, 400);
+  if (!allowed.includes(mimeType)) return json({ error: "只支援 JPG、PNG、WebP、GIF 圖片" }, 400);
+  const clean = String(dataBase64 ?? "").replace(/^data:[^;]+;base64,/, "").trim();
+  if (!clean) return json({ error: "缺少圖片資料" }, 400);
+  if (clean.length > 14 * 1024 * 1024) return json({ error: "圖片太大（請小於 10MB）" }, 413);
+  const normMime = mimeType === "image/jpg" ? "image/jpeg" : mimeType;
+  const out = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
+    contents: [{ role: "user", parts: [
+      { inlineData: { mimeType: normMime, data: clean } },
+      { text: IMAGE_OCR_PROMPT },
+    ] }],
+    generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+  });
+  const text = (out?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "").trim();
+  if (text.length < 15) return json({ error: "圖片中讀不到足夠的文字內容" }, 400);
+  const res = await ingest(source, text, false, audience);
+  const body = await res.json();
+  return json({ ...body, chars: text.length }, res.status);
+}
+
 async function ingestUrl(url: string, source: string, audience = "public") {
   url = String(url ?? "").trim();
   if (!isSafePublicUrl(url)) return json({ error: "請輸入有效的公開 http(s) 網址" }, 400);
   const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (NDHU-KM-course-project)" } });
   if (!r.ok) return json({ error: `下載失敗：HTTP ${r.status}` }, 400);
-  const type = r.headers.get("content-type") ?? "";
+  const type = (r.headers.get("content-type") ?? "").toLowerCase();
   const buf = new Uint8Array(await r.arrayBuffer());
   let text: string;
   let truncated = false;
@@ -536,6 +563,20 @@ async function ingestUrl(url: string, source: string, audience = "public") {
     });
     text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
     truncated = data?.candidates?.[0]?.finishReason === "MAX_TOKENS";
+  } else if (type.startsWith("image/") || /\.(png|jpe?g|webp|gif)($|\?)/i.test(url)) {
+    if (buf.length > 10 * 1024 * 1024) return json({ error: "圖片超過 10MB" }, 413);
+    const imgMime = type.startsWith("image/") ? type.split(";")[0]
+      : /\.png($|\?)/i.test(url) ? "image/png"
+      : /\.webp($|\?)/i.test(url) ? "image/webp"
+      : /\.gif($|\?)/i.test(url) ? "image/gif" : "image/jpeg";
+    const data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
+      contents: [{ role: "user", parts: [
+        { inlineData: { mimeType: imgMime, data: toBase64(buf) } },
+        { text: IMAGE_OCR_PROMPT },
+      ] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+    });
+    text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
   } else {
     text = htmlToText(new TextDecoder("utf-8").decode(buf));
   }
@@ -787,6 +828,7 @@ Deno.serve(async (req) => {
 
     if (!isAdmin(body.admin_key)) return await rejectAuth("管理密碼錯誤");
     if (action === "ingest") return await ingest(body.source, body.text, !!body.append, body.audience);
+    if (action === "ingest_image") return await ingestImage(body.source, body.mimeType, body.data, body.audience);
     if (action === "ingest_url") return await ingestUrl(body.url, body.source, body.audience);
     if (action === "pdf_prepare") return await pdfPrepare(body.url);
     if (action === "pdf_part") return await pdfPart(body.fileUri, body.source, body.url, Number(body.from), Number(body.to), body.audience);

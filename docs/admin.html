@@ -28,8 +28,8 @@
 
     <section class="panel">
       <h2>新增 / 更新知識</h2>
-      <label>上傳檔案（.txt .md .pdf .docx，可多選；檔名會當作來源名稱）</label>
-      <input type="file" id="files" multiple accept=".txt,.md,.pdf,.docx">
+      <label>上傳檔案（.txt .md .pdf .docx .png .jpg .webp，可多選；檔名會當作來源名稱）</label>
+      <input type="file" id="files" multiple accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.webp">
       <label>開放對象</label>
       <select id="aud1" class="aud"><option value="public">公開：學生、家長都查得到（官方規定、公告）</option><option value="staff">內部：只有行政人員登入後查得到（作業流程、經驗、例外處理）</option></select>
       <label>或直接貼上文字</label>
@@ -42,8 +42,8 @@
     </section>
 
     <section class="panel">
-      <h2>從網址匯入（學校公告、PDF）</h2>
-      <label>網址（PDF 或網頁，一行一個；可在網址後面加「 | 來源名稱」）</label>
+      <h2>從網址匯入（學校公告、PDF、圖片）</h2>
+      <label>網址（PDF、網頁或圖片，一行一個；可在網址後面加「 | 來源名稱」）</label>
       <textarea id="urls" style="min-height:90px" placeholder="https://aa.ndhu.edu.tw/....pdf | 115學年度新生註冊須知"></textarea>
       <label>開放對象</label>
       <select id="aud2" class="aud"><option value="public">公開</option><option value="staff">內部（只限行政人員）</option></select>
@@ -231,6 +231,31 @@ async function readFile(f) {
   return await f.text();
 }
 
+const IMG_EXT = new Set(['png', 'jpg', 'jpeg', 'webp']);
+function readImageBase64(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxDim = 2048;
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        const s = maxDim / Math.max(w, h);
+        w = Math.round(w * s); h = Math.round(h * s);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const mimeType = file.type === 'image/png' && file.size < 2 * 1024 * 1024 ? 'image/png' : 'image/jpeg';
+      const dataUrl = c.toDataURL(mimeType, 0.88);
+      resolve({ mimeType, data: dataUrl.split(',')[1] });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('圖片讀取失敗')); };
+    img.src = url;
+  });
+}
+
 async function upload() {
   $('upload').disabled = true;
   try {
@@ -242,11 +267,19 @@ async function upload() {
     }
     if (!jobs.length) throw new Error('請選檔案或貼上文字');
     for (const [i, j] of jobs.entries()) {
-      status('upStatus', `處理中 ${i + 1}/${jobs.length}：${j.source}…`);
-      const text = j.text ?? await readFile(j.file);
-      if (!text.trim()) throw new Error(`「${j.source}」讀不到文字（可能是掃描檔）`);
-      const r = await api({ action: 'ingest', source: j.source, text, audience: $('aud1').value });
-      status('upStatus', `「${r.source}」已加入，共 ${r.chunks} 段`, 'ok');
+      const ext = j.file ? j.file.name.split('.').pop().toLowerCase() : '';
+      if (j.file && IMG_EXT.has(ext)) {
+        status('upStatus', `辨識圖片文字中 ${i + 1}/${jobs.length}：${j.source}…`);
+        const { mimeType, data } = await readImageBase64(j.file);
+        const r = await api({ action: 'ingest_image', source: j.source, mimeType, data, audience: $('aud1').value });
+        status('upStatus', `「${r.source}」已從圖片辨識並加入（${r.chars} 字、共 ${r.chunks} 段）`, 'ok');
+      } else {
+        status('upStatus', `處理中 ${i + 1}/${jobs.length}：${j.source}…`);
+        const text = j.text ?? await readFile(j.file);
+        if (!text.trim()) throw new Error(`「${j.source}」讀不到文字（可能是掃描檔）`);
+        const r = await api({ action: 'ingest', source: j.source, text, audience: $('aud1').value });
+        status('upStatus', `「${r.source}」已加入，共 ${r.chunks} 段`, 'ok');
+      }
     }
     $('files').value = ''; $('text').value = ''; $('source').value = '';
     loadSources();
