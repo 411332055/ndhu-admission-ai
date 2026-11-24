@@ -439,7 +439,8 @@ async function chat(
       console.error("chat stream failed:", msg);
       if (/Gemini (404|429|500|503)/.test(msg)) {
         const fb = pickSources(hits, "partial", []);
-        if (fb.images.length) {
+        const asksMap = /平面圖|地圖|配置圖|幾樓|樓層|管理學院|管院|理工|人社|圖書館|圖資|資訊中心|行政大樓|總務處|教育學院|花師|原民|環境學院|藝術學院/.test(question);
+        if (fb.images.length && (asksMap || Number(top ?? 0) >= 0.72)) {
           const fallbackAns = `已為你找到相關的平面圖資料（點擊下方圖片可放大檢視）！\n\n目前 AI 文字整理服務較為忙碌，先直接附上平面圖供你參考；若需要更詳細的規定說明，歡迎稍後再問，或洽詢東華大學教務處綜合業務組（03-8906143）。`;
           return json({ answer: fallbackAns, sources: fb.sources, images: fb.images, internal: [], top_score: top, log_id: null });
         }
