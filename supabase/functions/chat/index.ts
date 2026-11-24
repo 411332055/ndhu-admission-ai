@@ -33,7 +33,7 @@ function safeEqual(a: unknown, b: string) {
 const isAdmin = (k: unknown) => safeEqual(k, ADMIN_KEY);
 const isStaff = (k: unknown) => safeEqual(k, STAFF_KEY) || isAdmin(k);  // 管理者也能用行政端
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
-const FALLBACK_MODELS = [GEMINI_MODEL, "gemini-2.5-flash-lite", "gemini-2.5-flash"].filter((m, i, a) => a.indexOf(m) === i);
+const FALLBACK_MODELS = [GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.1-flash-lite"].filter((m, i, a) => a.indexOf(m) === i);
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
 const TOP_K = 5;
