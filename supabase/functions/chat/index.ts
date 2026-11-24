@@ -34,8 +34,9 @@ const isStaff = (k: unknown) => safeEqual(k, STAFF_KEY) || isAdmin(k);  // 管�
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
-const TOP_K = 4;
-const MIN_SIM = Number(Deno.env.get("MIN_SIMILARITY") ?? "0.5");
+const TOP_K = 5;
+const CANDIDATE_K = 8;
+const MIN_SIM = Number(Deno.env.get("MIN_SIMILARITY") ?? "0.62");
 const CHUNK_SIZE = 700;   // 每段字數（免費版向量額度每分鐘 100 次，段落大一點比較不會超過）
 const OVERLAP = 100;
 const API = "https://generativelanguage.googleapis.com/v1beta";
@@ -69,28 +70,29 @@ const SYSTEM_STAFF = `你是國立東華大學入學行政「行政人員端」A
 1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
 2. 參考資料沒有的內容，回答「目前知識庫沒有這項內部資料，歡迎把處理經驗寫成筆記分享，審核後會加入知識庫」，不要自行編造。
 3. 日期、名額、金額等數字必須和參考資料完全一致。
-4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答：
-   【完整】參考資料足以完整回答問題
-   【部分】只能回答一部分，問題中有細節參考資料沒有
+4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答，並附上實際引用的參考資料編號（例如【完整|1,2】、【部分|1】、【無資料】）：
+   【完整|編號】參考資料足以完整回答問題
+   【部分|編號】只能回答一部分，問題中有細節參考資料沒有
    【無資料】參考資料完全無法回答
-   標記必須含【】括號，例如最後一行只寫：【完整】。這個標記只用來統計，使用者看不到。` + SAFETY_RULES;
+   標記必須含【】括號。這個標記只用來統計與對應資料來源，使用者看不到。` + SAFETY_RULES;
 
 const SYSTEM = `你是國立東華大學入學行政 AI 助理。
 規則：
 1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
 2. 參考資料沒有的內容，回答「目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）」，不要自行編造。
 3. 日期、名額、金額等數字必須和參考資料完全一致。
-4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答：
-   【完整】參考資料足以完整回答問題
-   【部分】只能回答一部分，問題中有細節（例如具體標準、分數、日期）參考資料沒有
+4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答，並附上實際引用的參考資料編號（例如【完整|1,2】、【部分|1】、【無資料】）：
+   【完整|編號】參考資料足以完整回答問題
+   【部分|編號】只能回答一部分，問題中有細節（例如具體標準、分數、日期）參考資料沒有
    【無資料】參考資料完全無法回答
-   標記必須含【】括號，例如最後一行只寫：【完整】。這個標記只用來統計，使用者看不到。` + SAFETY_RULES;
+   標記必須含【】括號。這個標記只用來統計與對應資料來源，使用者看不到。` + SAFETY_RULES;
 
 // 安全：問密碼、金鑰、系統設定，或想讓 AI 忽略規則的問題，直接拒絕，不檢索也不呼叫 Gemini
 const SENSITIVE = /(管理員|管理者|後台|資料庫|伺服器|admin|staff|行政人員|行政端)[^，。？?！!\n]{0,8}(密碼|帳密|金鑰|key|token)|管理[\s_-]*(密碼|金鑰|key)|api[\s_-]*key|service[\s_-]*role|secret|系統提示|提示詞|system\s*prompt|(忽略|無視|忘記|不要管)(以上|前面|先前|之前|所有|你的|上面)(的)?(規則|指示|設定|指令|提示|限制)|ignore\s+(all|previous|above)|jailbreak|越獄/i;
 const BLOCKED_ANSWER = "這個問題涉及系統安全資訊（例如密碼、金鑰或系統設定），無法提供。我只能回答東華大學入學行政相關問題。";
 
-const STATUS_TAG = /\s*[【\[]\s*(完整|部分|無資料)\s*[】\]]\s*$/;
+const STATUS_TAG = /\s*[【\[]\s*(完整|部分|無資料)(?:\s*[|｜:：]\s*([\d,\s、]+))?\s*[】\]]\s*$/;
+const STATUS_ANY = /[【\[]\s*(完整|部分|無資料)(?:\s*[|｜:：]\s*[\d,\s、]+)?\s*[】\]]/g;
 const NO_INFO = /目前知識庫沒有(相關資訊|這項內部資料)/;
 // AI 偶爾把標記寫成說明文字，也要認得並移除
 const STATUS_TEXT: [RegExp, "full" | "partial" | "none"][] = [
@@ -215,13 +217,54 @@ function cleanAnswer(raw: string) {
   answer = answer.replace(STATUS_TAG, "").trim();
   let found: "full" | "partial" | "none" | null =
     m ? ({ 完整: "full", 部分: "partial", 無資料: "none" } as const)[m[1] as "完整" | "部分" | "無資料"] : null;
+  const usedIndices = m?.[2]
+    ? [...new Set(m[2].split(/[,、\s]+/).map((x) => Number(x)).filter((n) => Number.isInteger(n) && n > 0))]
+    : [];
   for (const [re, st] of STATUS_TEXT) {
     if (re.test(answer)) { answer = answer.replace(re, "").trim(); found ??= st; }
   }
   let status: "full" | "partial" | "none" = found ?? (NO_INFO.test(answer) ? (answer.length < 90 ? "none" : "partial") : "full");
   if (status === "full" && NO_INFO.test(answer)) status = "partial";
-  answer = answer.replace(/[【\[]\s*(完整|部分|無資料)\s*[】\]]/g, "").trim();
-  return { answer, status };
+  answer = answer.replace(STATUS_ANY, "").trim();
+  return { answer, status, usedIndices };
+}
+
+function pickSources(hits: any[], status: "full" | "partial" | "none", usedIndices: number[]) {
+  if (status === "none") return { sources: [] as string[], usedHits: [] as any[] };
+  const picked = usedIndices.map((idx) => hits[idx - 1]).filter(Boolean);
+  const finalHits = picked.length ? picked : hits.slice(0, 3);
+  const sources = [...new Set(finalHits.map((h: any) => h.source))] as string[];
+  return { sources, usedHits: finalHits };
+}
+
+function mergeAndRank(vecRaw: any[], kwRaw: any[], staff: boolean) {
+  let vec = staff ? vecRaw : vecRaw.filter((h) => h.audience !== "staff");
+  const kw = staff ? kwRaw : kwRaw.filter((h) => h.audience !== "staff");
+
+  // 相對分數截斷：當第一名語意分數高時，自動過濾明顯偏低分的離題雜訊
+  if (vec.length > 1) {
+    const topVec = Number(vec[0]?.similarity ?? 0);
+    const floor = Math.max(MIN_SIM, topVec - 0.08);
+    vec = vec.filter((h, i) => i === 0 || Number(h.similarity ?? 0) >= floor);
+  }
+
+  // RRF（Reciprocal Rank Fusion）：同時被語意與關鍵字命中的段落排在最前面
+  const map = new Map<number, { row: any; rrf: number; vecSim: number }>();
+  vec.forEach((h, i) => {
+    map.set(h.id, { row: h, rrf: 1.2 / (20 + i + 1), vecSim: Number(h.similarity ?? 0) });
+  });
+  kw.forEach((k, i) => {
+    const bonus = Number(k.similarity ?? 0) >= 0.7 ? 0.03 : 0;
+    const score = 1.0 / (20 + i + 1) + bonus;
+    const cur = map.get(k.id);
+    if (cur) cur.rrf += score;
+    else map.set(k.id, { row: k, rrf: score, vecSim: 0 });
+  });
+
+  return [...map.values()]
+    .sort((a, b) => b.rrf - a.rrf || b.vecSim - a.vecSim)
+    .slice(0, TOP_K)
+    .map((x) => x.row);
 }
 
 async function geminiStreamFetch(path: string, body: unknown) {
@@ -278,12 +321,12 @@ async function chat(question: string, history: { role: string; content: string }
     ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
     : question;
 
-  // 混合檢索平行跑：向量（語意）與關鍵字（雙字詞重疊）同時執行，省去排隊等待時間
+  // 混合檢索平行跑：向量（語意）與關鍵字（標題＋內文＋英數代碼）同時執行，再用 RRF 融合重排
   const vecTask = (async () => {
     try {
       const [qv] = await embed([searchQuery], "RETRIEVAL_QUERY");
       const { data, error } = await sb.rpc("match_chunks", {
-        query_embedding: qv, match_count: TOP_K, min_similarity: MIN_SIM, include_staff: staff,
+        query_embedding: qv, match_count: CANDIDATE_K, min_similarity: MIN_SIM, include_staff: staff,
       });
       if (error) throw error;
       return data ?? [];
@@ -292,20 +335,11 @@ async function chat(question: string, history: { role: string; content: string }
       return [];
     }
   })();
-  const kwTask = sb.rpc("match_chunks_text", { q: searchQuery, match_count: TOP_K, include_staff: staff }).then((r) => r.data ?? []);
-  let [hits, kw] = await Promise.all([vecTask, kwTask]);
+  const kwTask = sb.rpc("match_chunks_text", { q: searchQuery, match_count: CANDIDATE_K, include_staff: staff }).then((r) => r.data ?? []);
+  const [vecHits, kwHits] = await Promise.all([vecTask, kwTask]);
+  const hits = mergeAndRank(vecHits, kwHits, staff);
 
-  // 雙重保險：學生端絕不送出內部資料
-  if (!staff) hits = hits.filter((h: any) => h.audience !== "staff");
-  for (const k of kw) {
-    if (hits.length >= TOP_K + 2) break;
-    if (!staff && k.audience === "staff") continue;
-    if (!hits.some((h: any) => h.id === k.id)) hits.push(k);
-  }
-
-  let sources = [...new Set((hits ?? []).map((h: any) => h.source))] as string[];
   const top = hits?.[0]?.similarity ?? null;
-  const internalAll = staff ? [...new Set(hits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
 
   if (!hits?.length) {
     const answer = staff
@@ -373,9 +407,9 @@ async function chat(question: string, history: { role: string; content: string }
               } catch {}
             }
           }
-          const { answer, status } = cleanAnswer(raw);
-          const finalSources = status === "none" ? [] : sources;
-          const finalInternal = internalAll.filter((x) => finalSources.includes(x));
+          const { answer, status, usedIndices } = cleanAnswer(raw);
+          const { sources: finalSources, usedHits } = pickSources(hits, status, usedIndices);
+          const finalInternal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
           const { data: logRow } = await sb.from("chat_logs").insert({
             question, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
           }).select("id").single();
@@ -413,8 +447,9 @@ async function chat(question: string, history: { role: string; content: string }
     throw e;
   }
   const raw = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
-  const { answer, status } = cleanAnswer(raw);
-  if (status === "none") sources = [];
+  const { answer, status, usedIndices } = cleanAnswer(raw);
+  const { sources, usedHits } = pickSources(hits, status, usedIndices);
+  const internal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
 
   const { data: logRow } = await sb.from("chat_logs").insert({
     question, answer, sources, top_score: top, answered: status === "full", status, role,
@@ -426,7 +461,7 @@ async function chat(question: string, history: { role: string; content: string }
       updated_at: new Date().toISOString(),
     });
   }
-  return json({ answer, sources, internal: internalAll.filter((x) => sources.includes(x)), top_score: top, log_id: logRow?.id ?? null });
+  return json({ answer, sources, internal, top_score: top, log_id: logRow?.id ?? null });
 }
 
 async function feedback(id: number, helpful: boolean, ip = "unknown") {

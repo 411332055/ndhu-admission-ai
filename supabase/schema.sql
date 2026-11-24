@@ -128,7 +128,7 @@ $$;
 revoke execute on function public.match_chunks(extensions.vector, int, float, boolean) from public, anon, authenticated;
 grant execute on function public.match_chunks(extensions.vector, int, float, boolean) to service_role;
 
--- 備援檢索：中文雙字詞重疊比例
+-- 備援與混合檢索：同時比對「文件標題＋內文」的中文雙字詞與英數代碼（標題命中與代碼精準命中皆加權）
 create or replace function public.match_chunks_text(q text, match_count int default 4, include_staff boolean default false)
 returns table (id bigint, source text, content text, similarity float, audience text)
 language sql stable
@@ -137,18 +137,41 @@ as $$
   with grams as (
     select distinct substr(q, i, 2) as g
     from generate_series(1, greatest(char_length(q) - 1, 1)) as i
-    where substr(q, i, 2) !~ '[[:space:][:punct:]？，。、！：；「」（）]'
-      and substr(q, i, 2) not in ('什麼','怎麼','可以','要在','是否','請問','我要','如何','的時','時候')
+    where substr(q, i, 2) !~ '[[:space:][:punct:]？，。、！：；「」（）『』]'
+      and substr(q, i, 2) !~ '^[A-Za-z0-9]+$'
+      and substr(q, i, 2) not in (
+        '什麼','怎麼','可以','要在','是否','請問','我要','如何','的時','時候',
+        '哪些','哪裡','多少','還有','如果','需要','應該','一下','關於','知道','告訴','我們','你們','他們'
+      )
   ),
-  total as (select greatest(count(*), 1)::float as n from grams),
+  tokens as (
+    select distinct lower(m[1]) as t
+    from regexp_matches(q, '([A-Za-z0-9][A-Za-z0-9_+.-]{1,})', 'g') as m
+  ),
+  counts as (
+    select (select count(*) from grams) as ng, (select count(*) from tokens) as nt
+  ),
   scored as (
     select c.id, c.source, c.content, c.audience,
-           (select count(*) from grams where strpos(c.content, grams.g) > 0)::float / (select n from total) as s
+      least(1.0,
+        case when (select ng from counts) > 0 then
+          (
+            (select count(*) from grams where strpos(c.content, grams.g) > 0)::float
+            + 1.6 * (select count(*) from grams where strpos(c.source, grams.g) > 0)::float
+          ) / ((select ng from counts)::float * 1.4)
+        else 0.0 end
+        + case when (select nt from counts) > 0 then
+          (
+            (select count(*) from tokens where strpos(lower(c.source || ' ' || c.content), tokens.t) > 0)::float
+            / (select nt from counts)::float
+          ) * 0.85
+        else 0.0 end
+      ) as s
     from public.kb_chunks c
     where include_staff or c.audience = 'public'
   )
   select id, source, content, s, audience from scored
-  where s >= 0.35
+  where s >= 0.32
   order by s desc, id
   limit match_count;
 $$;
