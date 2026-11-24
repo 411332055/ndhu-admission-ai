@@ -3,6 +3,7 @@
 $Host.UI.RawUI.WindowTitle = '東華入學 AI 助理｜控制台'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $repo
+git pull --ff-only --quiet 2>$null | Out-Null
 $ref  = 'krbrxahyebnvjnxievjb'
 $site = 'https://411332055.github.io/ndhu-admission-ai/'
 
@@ -40,8 +41,11 @@ function Open-Project {
   $opts = @{ FilePath = $app; ArgumentList = "`"$repo`""; RedirectStandardOutput = "$log.out.txt"; RedirectStandardError = "$log.err.txt" }
   if ($app -like '*.cmd') { $opts.WindowStyle = 'Hidden' }
   Start-Process @opts
-  Write-Host '已用 Antigravity 開啟專案。' -ForegroundColor Green
-  Start-Sleep -Seconds 2
+  Set-Clipboard -Value $repo
+  Write-Host '已開啟 Antigravity。' -ForegroundColor Green
+  Write-Host "專案資料夾路徑已複製：$repo" -ForegroundColor Green
+  Write-Host '如果左邊 Projects 沒有這個專案，按資料夾＋圖示，在路徑欄按 Ctrl+V 貼上即可。'
+  Wait-Key
 }
 
 function Invoke-Deploy {
