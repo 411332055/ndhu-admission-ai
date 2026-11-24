@@ -104,3 +104,23 @@ as $$
 $$;
 revoke execute on function public.match_chunks_text(text, int, boolean) from public, anon, authenticated;
 grant execute on function public.match_chunks_text(text, int, boolean) to service_role;
+
+-- 排程匯入佇列：大型 PDF 由 pg_cron 定時呼叫 Edge Function 的 process_queue，一次處理一小步（上傳或 10 頁）
+create table if not exists public.import_queue (
+  id bigserial primary key,
+  url text not null,
+  source text not null,
+  status text not null default 'pending',   -- pending / parts / done / error
+  file_uri text,                            -- Gemini Files API 的檔案位址
+  next_from integer not null default 1,     -- 下一次要轉錄的起始頁
+  chunks integer not null default 0,
+  error text,
+  locked_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+alter table public.import_queue enable row level security;
+-- 需要時再建立排程（用完記得 cron.unschedule）：
+-- select cron.schedule('process-import-queue', '*/2 * * * *', $$
+--   select net.http_post(url := 'https://krbrxahyebnvjnxievjb.supabase.co/functions/v1/chat',
+--     body := '{"action":"process_queue"}'::jsonb, headers := '{"content-type":"application/json"}'::jsonb,
+--     timeout_milliseconds := 150000) $$);
