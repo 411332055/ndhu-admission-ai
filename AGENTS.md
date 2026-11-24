@@ -88,7 +88,7 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 
 ## 部署
 
-使用者桌面有一個「入學AI助理.bat」（內容同 `tools/windows/ndhu-ai.bat`，純 ASCII：第一次自動 clone 專案，之後啟動）→ `tools/windows/launcher.ps1` 控制台選單：開啟專案（git pull 後用 Antigravity 開啟）、一鍵部署（pull、commit、push 前端，再用 Supabase CLI 部署後端）、開啟各網站。Supabase CLI 已在使用者電腦登入。改了部署方式要同步更新 `launcher.ps1`。注意：Windows 的 .bat 檔不要寫中文（cmd 會解析成亂碼），中文介面一律寫在 PowerShell 檔，並存成 UTF-8 with BOM。
+使用者桌面有一個「入學AI助理.bat」（內容同 `tools/windows/ndhu-ai.bat`，純 ASCII：第一次自動 clone 專案，之後啟動）→ `tools/windows/launcher.ps1` 控制台選單：開啟專案（git pull 後在同一個 PowerShell 視窗執行 Antigravity CLI `agy`，未安裝時詢問後用官方 install.ps1 安裝）、一鍵部署（pull、commit、push 前端，再用 Supabase CLI 部署後端）、開啟各網站。Supabase CLI 已在使用者電腦登入。改了部署方式要同步更新 `launcher.ps1`。注意：Windows 的 .bat 檔不要寫中文（cmd 會解析成亂碼），中文介面一律寫在 PowerShell 檔，並存成 UTF-8 with BOM。
 
 - 前端：改 `docs/` 後 commit、push 到 main 即可。
 - 後端：用 Supabase CLI

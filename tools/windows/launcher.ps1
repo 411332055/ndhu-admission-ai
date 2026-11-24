@@ -19,33 +19,44 @@ function Show-Fail {
 }
 function Show-Step($text) { Write-Host ''; Write-Host $text -ForegroundColor Cyan }
 
+function Find-Agy {
+  # 重新讀取 PATH，剛安裝完的 agy 才找得到
+  $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+  $cmd = Get-Command agy -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  foreach ($p in "$env:USERPROFILE\.local\bin\agy.exe", "$env:LOCALAPPDATA\Programs\agy\agy.exe") {
+    if (Test-Path $p) { return $p }
+  }
+  return $null
+}
+
 function Open-Project {
   Show-Step '正在下載最新版本…'
   git pull --ff-only
-  if ($LASTEXITCODE -ne 0) { Write-Host '（下載最新版本失敗，可能是本機有還沒上傳的修改；先照常開啟專案）' -ForegroundColor Yellow }
-  $cmd = Get-Command antigravity -ErrorAction SilentlyContinue
-  $paths = @(
-    $(if ($cmd) { $cmd.Source }),
-    "$env:LOCALAPPDATA\Programs\Antigravity\bin\antigravity.cmd",
-    "$env:LOCALAPPDATA\Programs\Antigravity\Antigravity.exe"
-  ) | Where-Object { $_ -and (Test-Path $_) }
-  if (-not $paths) {
-    Write-Host '找不到 Antigravity，請先安裝：https://antigravity.google' -ForegroundColor Red
-    Start-Process 'https://antigravity.google'
-    Wait-Key
-    return
+  if ($LASTEXITCODE -ne 0) { Write-Host '（下載最新版本失敗，可能是本機有還沒上傳的修改；先照常開啟）' -ForegroundColor Yellow }
+
+  $agy = Find-Agy
+  if (-not $agy) {
+    Write-Host ''
+    Write-Host '這台電腦還沒安裝 Antigravity CLI（agy）。' -ForegroundColor Yellow
+    Write-Host '要現在用 Google 官方安裝指令安裝嗎？按 Y 安裝，其他鍵取消：' -NoNewline
+    $ans = [Console]::ReadKey($true).KeyChar
+    Write-Host $ans
+    if ($ans -ne 'y' -and $ans -ne 'Y') { return }
+    Invoke-RestMethod 'https://antigravity.google/cli/install.ps1' | Invoke-Expression
+    $agy = Find-Agy
+    if (-not $agy) {
+      Write-Host '安裝完成但找不到 agy，請關掉這個視窗重新開啟一次。' -ForegroundColor Yellow
+      return Show-Fail
+    }
   }
-  $app = @($paths)[0]
-  # Antigravity 會把自己的紀錄印到開啟它的視窗，導向到暫存檔，控制台才不會被洗版
-  $log = Join-Path $env:TEMP 'antigravity-launch'
-  $opts = @{ FilePath = $app; ArgumentList = "`"$repo`""; RedirectStandardOutput = "$log.out.txt"; RedirectStandardError = "$log.err.txt" }
-  if ($app -like '*.cmd') { $opts.WindowStyle = 'Hidden' }
-  Start-Process @opts
-  Set-Clipboard -Value $repo
-  Write-Host '已開啟 Antigravity。' -ForegroundColor Green
-  Write-Host "專案資料夾路徑已複製：$repo" -ForegroundColor Green
-  Write-Host '如果左邊 Projects 沒有這個專案，按資料夾＋圖示，在路徑欄按 Ctrl+V 貼上即可。'
-  Wait-Key
+
+  Clear-Host
+  Write-Host "在 $repo 啟動 Antigravity CLI…" -ForegroundColor Green
+  Write-Host '第一次會請你登入、並問要不要信任這個資料夾，選信任。離開 Antigravity 後會回到選單。' -ForegroundColor DarkGray
+  Write-Host ''
+  & $agy
+  $Host.UI.RawUI.WindowTitle = '東華入學 AI 助理｜控制台'
 }
 
 function Invoke-Deploy {
@@ -86,7 +97,7 @@ while ($true) {
   Write-Host '     東華入學 AI 助理｜控制台' -ForegroundColor Green
   Write-Host '======================================' -ForegroundColor DarkGreen
   Write-Host ''
-  Write-Host '  1. 用 Antigravity 開啟專案（先下載最新版）'
+  Write-Host '  1. 在這個視窗啟動 Antigravity（先下載最新版）'
   Write-Host '  2. 一鍵部署（網頁＋後端）'
   Write-Host ''
   Write-Host '  3. 開啟學生端網站'
