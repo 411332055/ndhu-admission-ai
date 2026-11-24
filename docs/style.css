@@ -108,6 +108,7 @@ body.staff header p, body.staff header .links a { color: #9db5a8; }
 .fb button:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
 .fb button.picked { background: var(--green-soft); border-color: var(--green); color: var(--green-dark); font-weight: 600; }
 .fb button:disabled { opacity: .65; cursor: default; }
+.fb .copy-btn { margin-left: auto; }
 .tabs .new-chat { margin-left: auto; background: none; color: var(--muted); }
 .tabs .new-chat:hover { border-color: var(--green); color: var(--green); }
 .filter-bar { display: flex; gap: 8px; margin: 10px 0; }

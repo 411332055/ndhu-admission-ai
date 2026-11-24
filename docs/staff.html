@@ -96,6 +96,11 @@ const $ = id => document.getElementById(id);
 let KEY = '';
 try { KEY = sessionStorage.getItem('staff_key') || ''; } catch {}
 const history = [];
+const STORE_KEY = 'ndhu_chat_staff';
+let savedTurns = [];
+function saveTurns() {
+  try { sessionStorage.setItem(STORE_KEY, JSON.stringify(savedTurns.slice(-30))); } catch {}
+}
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -147,10 +152,14 @@ async function login() {
     await api({ action: 'staff_login' });
     try { sessionStorage.setItem('staff_key', KEY); } catch {}
     $('loginPane').hidden = true; $('app').hidden = false; $('logout').hidden = false;
+    restoreTurns();
   } catch (e) { $('loginStatus').textContent = e.message; $('loginStatus').className = 'status err'; }
 }
 function logout() {
-  KEY = ''; try { sessionStorage.removeItem('staff_key'); } catch {}
+  KEY = '';
+  history.length = 0; savedTurns = [];
+  try { sessionStorage.removeItem('staff_key'); sessionStorage.removeItem(STORE_KEY); } catch {}
+  chat.innerHTML = WELCOME_HTML; bindChips();
   $('loginPane').hidden = false; $('app').hidden = true; $('logout').hidden = true;
 }
 $('login').onclick = login;
@@ -181,12 +190,45 @@ function add(role, html) {
 function cleanPreview(t) {
   return t.replace(/\s*[【\[]\s*(完整|部分|無資料)?\s*[】\]]?\s*$/, '').trim();
 }
-function renderFinal(bubble, question, d) {
+function renderFinal(bubble, question, d, persist = true) {
   let html = md(d.answer);
   if (d.sources?.length) html += `<div class="sources">📄 資料來源：${d.sources.map(s =>
     esc(s) + (d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : '')).join('、')}</div>`;
   bubble.innerHTML = html;
+  const bar = document.createElement('div');
+  bar.className = 'fb';
+  const cp = document.createElement('button');
+  cp.type = 'button'; cp.className = 'copy-btn'; cp.textContent = '📋 複製回答';
+  cp.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(d.answer);
+      cp.textContent = '✅ 已複製';
+      setTimeout(() => cp.textContent = '📋 複製回答', 1500);
+    } catch {}
+  };
+  bar.appendChild(cp);
+  bubble.appendChild(bar);
+  if (persist) {
+    savedTurns.push({ q: question, answer: d.answer, sources: d.sources || [], internal: d.internal || [] });
+    saveTurns();
+  }
   history.push({ role: 'user', content: question }, { role: 'assistant', content: d.answer });
+}
+let restored = false;
+function restoreTurns() {
+  if (restored) return;
+  restored = true;
+  try {
+    const prev = JSON.parse(sessionStorage.getItem(STORE_KEY) || '[]');
+    if (Array.isArray(prev) && prev.length) {
+      savedTurns = prev;
+      for (const t of savedTurns) {
+        add('user', esc(t.q));
+        const b = add('bot', '');
+        renderFinal(b, t.q, t, false);
+      }
+    }
+  } catch {}
 }
 async function ask(question) {
   question = question.trim();
@@ -243,6 +285,8 @@ function bindChips() {
 }
 $('newChat').onclick = () => {
   history.length = 0;
+  savedTurns = [];
+  try { sessionStorage.removeItem(STORE_KEY); } catch {}
   chat.innerHTML = WELCOME_HTML;
   bindChips();
   q.focus();

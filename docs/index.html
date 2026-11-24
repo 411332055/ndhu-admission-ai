@@ -41,7 +41,13 @@ const form = document.getElementById('form');
 const q = document.getElementById('q');
 const send = document.getElementById('send');
 const history = [];
+const STORE_KEY = 'ndhu_chat_student';
+let savedTurns = [];
 const WELCOME_HTML = chat.innerHTML;
+
+function saveTurns() {
+  try { sessionStorage.setItem(STORE_KEY, JSON.stringify(savedTurns.slice(-30))); } catch {}
+}
 
 function esc(s) {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -83,27 +89,48 @@ function add(role, html) {
   return row.firstChild;
 }
 
-function bindFeedback(bubble, logId) {
+function bindActions(bubble, answer, logId, turn) {
   const bar = document.createElement('div');
   bar.className = 'fb';
-  bar.innerHTML = '<span>這則回答有幫助嗎？</span>'
-    + '<button type="button" data-v="1">👍 有幫助</button>'
-    + '<button type="button" data-v="0">👎 沒幫到</button>';
-  bar.querySelectorAll('button').forEach(btn => btn.onclick = async () => {
-    const helpful = btn.dataset.v === '1';
-    bar.querySelectorAll('button').forEach(b => b.disabled = true);
-    btn.classList.add('picked');
-    try {
-      await fetch(URL_, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'feedback', id: logId, helpful }),
+  if (logId) {
+    bar.innerHTML = '<span>這則回答有幫助嗎？</span>'
+      + '<button type="button" data-v="1">👍 有幫助</button>'
+      + '<button type="button" data-v="0">👎 沒幫到</button>';
+    if (turn?.fb !== undefined) {
+      bar.querySelectorAll('button[data-v]').forEach(b => {
+        b.disabled = true;
+        if ((b.dataset.v === '1') === turn.fb) b.classList.add('picked');
       });
-      bar.querySelector('span').textContent = helpful ? '謝謝回饋！' : '已記錄，我們會再補充資料！';
-    } catch {
-      bar.querySelectorAll('button').forEach(b => b.disabled = false);
-      btn.classList.remove('picked');
+      bar.querySelector('span').textContent = turn.fb ? '謝謝回饋！' : '已記錄，我們會再補充資料！';
+    } else {
+      bar.querySelectorAll('button[data-v]').forEach(btn => btn.onclick = async () => {
+        const helpful = btn.dataset.v === '1';
+        bar.querySelectorAll('button[data-v]').forEach(b => b.disabled = true);
+        btn.classList.add('picked');
+        try {
+          await fetch(URL_, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'feedback', id: logId, helpful }),
+          });
+          bar.querySelector('span').textContent = helpful ? '謝謝回饋！' : '已記錄，我們會再補充資料！';
+          if (turn) { turn.fb = helpful; saveTurns(); }
+        } catch {
+          bar.querySelectorAll('button[data-v]').forEach(b => b.disabled = false);
+          btn.classList.remove('picked');
+        }
+      });
     }
-  });
+  }
+  const cp = document.createElement('button');
+  cp.type = 'button'; cp.className = 'copy-btn'; cp.textContent = '📋 複製';
+  cp.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(answer);
+      cp.textContent = '✅ 已複製';
+      setTimeout(() => cp.textContent = '📋 複製', 1500);
+    } catch {}
+  };
+  bar.appendChild(cp);
   bubble.appendChild(bar);
 }
 
@@ -111,11 +138,17 @@ function cleanPreview(t) {
   return t.replace(/\s*[【\[]\s*(完整|部分|無資料)?\s*[】\]]?\s*$/, '').trim();
 }
 
-function renderFinal(bubble, question, data) {
+function renderFinal(bubble, question, data, persist = true) {
   let html = md(data.answer);
   if (data.sources?.length) html += `<div class="sources">📄 資料來源：${data.sources.map(esc).join('、')}</div>`;
   bubble.innerHTML = html;
-  if (data.log_id) bindFeedback(bubble, data.log_id);
+  let turn = data._turn;
+  if (persist) {
+    turn = { q: question, answer: data.answer, sources: data.sources || [], log_id: data.log_id || null };
+    savedTurns.push(turn);
+    saveTurns();
+  }
+  bindActions(bubble, data.answer, data.log_id, turn);
   history.push({ role: 'user', content: question }, { role: 'assistant', content: data.answer });
 }
 
@@ -176,6 +209,8 @@ function bindChips() {
 document.getElementById('newChat').addEventListener('click', e => {
   e.preventDefault();
   history.length = 0;
+  savedTurns = [];
+  try { sessionStorage.removeItem(STORE_KEY); } catch {}
   chat.innerHTML = WELCOME_HTML;
   bindChips();
   q.focus();
@@ -187,6 +222,17 @@ q.addEventListener('keydown', e => {
 });
 q.addEventListener('input', () => { q.style.height = 'auto'; q.style.height = q.scrollHeight + 'px'; });
 bindChips();
+try {
+  const prev = JSON.parse(sessionStorage.getItem(STORE_KEY) || '[]');
+  if (Array.isArray(prev) && prev.length) {
+    savedTurns = prev;
+    for (const t of savedTurns) {
+      add('user', esc(t.q));
+      const b = add('bot', '');
+      renderFinal(b, t.q, { ...t, _turn: t }, false);
+    }
+  }
+} catch {}
 </script>
 </body>
 </html>

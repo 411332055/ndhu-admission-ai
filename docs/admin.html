@@ -77,7 +77,10 @@
     <section class="panel">
       <h2>問答紀錄與知識缺口</h2>
       <div class="status" id="statSummary">請先登入</div>
-      <div class="tabs-row"><label><input type="checkbox" id="gapOnly" checked> 只看待補缺口</label></div>
+      <div class="tabs-row" style="display:flex;align-items:center;gap:8px">
+        <label style="margin:0"><input type="checkbox" id="gapOnly" checked> 只看待補缺口</label>
+        <button class="ghost" id="exportCsv" style="margin-left:auto" disabled>匯出 CSV</button>
+      </div>
       <table><thead><tr><th>問題</th><th>狀態</th><th>時間</th><th></th></tr></thead>
         <tbody id="logList"></tbody></table>
     </section>
@@ -140,8 +143,11 @@ async function loadSources() {
 $('srcSearch').oninput = renderSources;
 $('srcFilter').onchange = renderSources;
 
+let lastLogs = [];
 async function loadStats() {
   const d = await api({ action: 'stats' });
+  lastLogs = d.recent || [];
+  $('exportCsv').disabled = !lastLogs.length;
   const fbText = (d.helpfulYes || d.helpfulNo) ? `；使用者回饋 👍 ${d.helpfulYes || 0}、👎 ${d.helpfulNo || 0}` : '';
   status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答、無資料或回報沒幫到）${d.blocked ? `，攔截 ${d.blocked} 則安全提問` : ''}${fbText}。點問題可看 AI 的回答；補好資料後按「已補充」。`);
   const label = { full: ['已回答', 'ok'], partial: ['部分回答', 'warn'], none: ['知識缺口', ''], blocked: ['🛡️ 已攔截', 'staff'] };
@@ -164,6 +170,23 @@ async function loadStats() {
   });
 }
 $('gapOnly').onchange = () => loadStats();
+$('exportCsv').onclick = () => {
+  if (!lastLogs.length) return;
+  const csvCell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const stMap = { full: '已回答', partial: '部分回答', none: '知識缺口', blocked: '已攔截' };
+  const head = ['時間', '角色', '問題', 'AI回答', '狀態', '已補充', '使用者回饋'];
+  const lines = [head.map(csvCell).join(',')];
+  for (const r of lastLogs) {
+    const fb = r.helpful === true ? '有幫助' : r.helpful === false ? '沒幫到' : '';
+    lines.push([fmt(r.created_at), r.role === 'staff' ? '行政' : '學生', r.question, r.answer || '', stMap[r.status] || r.status, r.resolved ? '是' : '否', fb].map(csvCell).join(','));
+  }
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ndhu-chat-logs-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 
 async function loadNotes() {
   const { notes } = await api({ action: 'notes' });
