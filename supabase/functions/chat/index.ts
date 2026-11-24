@@ -317,9 +317,16 @@ async function chat(question: string, history: { role: string; content: string }
 
   // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
   const prevUser = [...hist].reverse().find((m) => m?.role === "user" && m?.content);
-  const searchQuery = prevUser && question.length <= 25
+  const baseQuery = prevUser && question.length <= 25
     ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
     : question;
+
+  // 口語同義詞展開（從資料庫 kb_synonyms 自動補上官方正式用語，0 消耗 Gemini 額度）
+  let searchQuery = baseQuery;
+  try {
+    const { data: expanded } = await sb.rpc("expand_query", { q: baseQuery });
+    if (typeof expanded === "string" && expanded.trim()) searchQuery = expanded.trim();
+  } catch {}
 
   // 混合檢索平行跑：向量（語意）與關鍵字（標題＋內文＋英數代碼）同時執行，再用 RRF 融合重排
   const vecTask = (async () => {
