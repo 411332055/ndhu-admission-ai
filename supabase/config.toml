@@ -1,0 +1,5 @@
+# Supabase CLI 設定（給「一鍵部署」與 npx supabase functions deploy 使用）
+project_id = "krbrxahyebnvjnxievjb"
+
+[functions.chat]
+verify_jwt = false

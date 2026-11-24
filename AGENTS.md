@@ -88,11 +88,13 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 
 ## 部署
 
+使用者桌面有兩個捷徑（`tools/windows/`）：「開啟專案」會 git pull 後用 Antigravity 開啟；「一鍵部署」會 pull、commit、push 前端，再用 Supabase CLI 部署後端。改了部署方式要同步更新 `tools/windows/deploy.bat`。
+
 - 前端：改 `docs/` 後 commit、push 到 main 即可。
 - 後端：用 Supabase CLI
   ```
   npx supabase login
-  npx supabase functions deploy chat --project-ref krbrxahyebnvjnxievjb --no-verify-jwt
+  npx supabase functions deploy chat --project-ref krbrxahyebnvjnxievjb --no-verify-jwt --use-api
   ```
   一定要加 `--no-verify-jwt`，前端沒有送 JWT。
 - 資料庫：SQL 貼到 Supabase Dashboard → SQL Editor 執行，或用 `npx supabase db` 指令；改完同步更新 `schema.sql`。
