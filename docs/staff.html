@@ -178,6 +178,16 @@ function add(role, html) {
   row.scrollIntoView({ behavior: 'smooth', block: 'end' });
   return row.firstChild;
 }
+function cleanPreview(t) {
+  return t.replace(/\s*[【\[]\s*(完整|部分|無資料)?\s*[】\]]?\s*$/, '').trim();
+}
+function renderFinal(bubble, question, d) {
+  let html = md(d.answer);
+  if (d.sources?.length) html += `<div class="sources">📄 資料來源：${d.sources.map(s =>
+    esc(s) + (d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : '')).join('、')}</div>`;
+  bubble.innerHTML = html;
+  history.push({ role: 'user', content: question }, { role: 'assistant', content: d.answer });
+}
 async function ask(question) {
   question = question.trim();
   if (!question) return;
@@ -185,12 +195,42 @@ async function ask(question) {
   const bubble = add('bot', '<span class="typing"><span></span><span></span><span></span></span>');
   send.disabled = true;
   try {
-    const d = await api({ action: 'chat', question, history: history.slice(-4) });
-    let html = md(d.answer);
-    if (d.sources?.length) html += `<div class="sources">📄 資料來源：${d.sources.map(s =>
-      esc(s) + (d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : '')).join('、')}</div>`;
-    bubble.innerHTML = html;
-    history.push({ role: 'user', content: question }, { role: 'assistant', content: d.answer });
+    const r = await fetch(URL_, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'chat', question, history: history.slice(-4), staff_key: KEY, stream: true }),
+    });
+    if (r.status === 401) { const d = await r.json().catch(() => ({})); logout(); throw new Error(d.error || '請重新登入'); }
+    if (r.headers.get('content-type')?.includes('text/event-stream') && r.body) {
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', acc = '', doneData = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const ev = JSON.parse(line.slice(5).trim());
+          if (ev.type === 'delta') {
+            acc += ev.text;
+            const preview = cleanPreview(acc);
+            if (preview) { bubble.innerHTML = md(preview); bubble.scrollIntoView({ block: 'end' }); }
+          } else if (ev.type === 'done') {
+            doneData = ev;
+          } else if (ev.type === 'error') {
+            throw new Error(ev.error);
+          }
+        }
+      }
+      if (!doneData) throw new Error('連線中斷，請再試一次');
+      renderFinal(bubble, question, doneData);
+    } else {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      renderFinal(bubble, question, d);
+    }
   } catch (e) {
     bubble.innerHTML = `<span style="color:#b3261e">${esc(e.message)}</span>`;
   } finally {

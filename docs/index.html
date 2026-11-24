@@ -107,6 +107,18 @@ function bindFeedback(bubble, logId) {
   bubble.appendChild(bar);
 }
 
+function cleanPreview(t) {
+  return t.replace(/\s*[【\[]\s*(完整|部分|無資料)?\s*[】\]]?\s*$/, '').trim();
+}
+
+function renderFinal(bubble, question, data) {
+  let html = md(data.answer);
+  if (data.sources?.length) html += `<div class="sources">📄 資料來源：${data.sources.map(esc).join('、')}</div>`;
+  bubble.innerHTML = html;
+  if (data.log_id) bindFeedback(bubble, data.log_id);
+  history.push({ role: 'user', content: question }, { role: 'assistant', content: data.answer });
+}
+
 async function ask(question) {
   question = question.trim();
   if (!question) return;
@@ -117,15 +129,39 @@ async function ask(question) {
     const r = await fetch(URL_, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'chat', question, history: history.slice(-4) }),
+      body: JSON.stringify({ action: 'chat', question, history: history.slice(-4), stream: true }),
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || r.status);
-    let html = md(data.answer);
-    if (data.sources?.length) html += `<div class="sources">📄 資料來源：${data.sources.map(esc).join('、')}</div>`;
-    bubble.innerHTML = html;
-    if (data.log_id) bindFeedback(bubble, data.log_id);
-    history.push({ role: 'user', content: question }, { role: 'assistant', content: data.answer });
+    if (r.headers.get('content-type')?.includes('text/event-stream') && r.body) {
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', acc = '', doneData = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const ev = JSON.parse(line.slice(5).trim());
+          if (ev.type === 'delta') {
+            acc += ev.text;
+            const preview = cleanPreview(acc);
+            if (preview) { bubble.innerHTML = md(preview); bubble.scrollIntoView({ block: 'end' }); }
+          } else if (ev.type === 'done') {
+            doneData = ev;
+          } else if (ev.type === 'error') {
+            throw new Error(ev.error);
+          }
+        }
+      }
+      if (!doneData) throw new Error('連線中斷，請再試一次');
+      renderFinal(bubble, question, doneData);
+    } else {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || r.status);
+      renderFinal(bubble, question, data);
+    }
   } catch (e) {
     bubble.innerHTML = `<span style="color:#b3261e">${esc(String(e.message || e))}</span>`;
   } finally {

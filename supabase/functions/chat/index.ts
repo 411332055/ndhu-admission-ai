@@ -173,100 +173,232 @@ async function allowRequest(key: string, limit: number, windowSec = 60) {
   }
 }
 
-async function chat(question: string, history: { role: string; content: string }[] = [], role: "student" | "staff" = "student", ip = "unknown") {
+function normQ(q: string) {
+  return q.toLowerCase().replace(/[\s？?。！!，,、：:；;「」『』（）()]+/g, "").slice(0, 120);
+}
+
+async function clearQaCache() {
+  try { await sb.from("app_cache").delete().like("key", "qa:%"); } catch {}
+}
+
+function cleanAnswer(raw: string) {
+  let answer = raw.trim() || "抱歉，暫時無法產生回答，請稍後再試。";
+  const m = answer.match(STATUS_TAG);
+  answer = answer.replace(STATUS_TAG, "").trim();
+  let found: "full" | "partial" | "none" | null =
+    m ? ({ 完整: "full", 部分: "partial", 無資料: "none" } as const)[m[1] as "完整" | "部分" | "無資料"] : null;
+  for (const [re, st] of STATUS_TEXT) {
+    if (re.test(answer)) { answer = answer.replace(re, "").trim(); found ??= st; }
+  }
+  let status: "full" | "partial" | "none" = found ?? (NO_INFO.test(answer) ? (answer.length < 90 ? "none" : "partial") : "full");
+  if (status === "full" && NO_INFO.test(answer)) status = "partial";
+  answer = answer.replace(/[【\[]\s*(完整|部分|無資料)\s*[】\]]/g, "").trim();
+  return { answer, status };
+}
+
+async function geminiStreamFetch(path: string, body: unknown) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(`${API}/${path}?alt=sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+      body: JSON.stringify(body),
+    });
+    if (r.ok && r.body) return r;
+    const data = await r.json().catch(() => ({}));
+    const perDay = /per day/i.test(String(data?.error?.message ?? ""));
+    if (attempt < 2 && [429, 500, 503].includes(r.status) && !perDay) {
+      const hint = Number(String(data?.error?.message ?? "").match(/retry in ([\d.]+)s/)?.[1] ?? 0);
+      const wait = r.status === 429 && hint ? Math.min(hint + 1, 15) : 2 ** attempt;
+      await new Promise((res) => setTimeout(res, wait * 1000));
+      continue;
+    }
+    throw new Error(`Gemini ${r.status}: ${data?.error?.message ?? JSON.stringify(data)}`);
+  }
+}
+
+async function chat(question: string, history: { role: string; content: string }[] = [], role: "student" | "staff" = "student", ip = "unknown", stream = false) {
   const staff = role === "staff";
   question = String(question ?? "").trim().slice(0, 500);
   if (!question) return json({ error: "請輸入問題" }, 400);
-  if (!(await allowRequest(`chat:${role}:${ip}`, staff ? 15 : 8, 60))) {
-    return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
-  }
   if (SENSITIVE.test(question)) {
     await sb.from("chat_logs").insert({ question, answer: BLOCKED_ANSWER, sources: [], answered: false, status: "blocked", role, resolved: true });
     return json({ answer: BLOCKED_ANSWER, sources: [], internal: [], top_score: null });
   }
 
+  const hist = Array.isArray(history) ? history : [];
+  const cacheKey = !staff && hist.length === 0 ? `qa:public:${normQ(question)}` : null;
+
+  // 平行檢查限流與熱門問題快取
+  const [allowed, cachedRes] = await Promise.all([
+    allowRequest(`chat:${role}:${ip}`, staff ? 15 : 8, 60),
+    cacheKey ? sb.from("app_cache").select("value, updated_at").eq("key", cacheKey).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  if (!allowed) return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
+
+  const cached = cachedRes?.data;
+  if (cached && Date.now() - Date.parse(cached.updated_at) < 6 * 3600_000 && cached.value?.answer) {
+    const v = cached.value;
+    const { data: logRow } = await sb.from("chat_logs").insert({
+      question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
+    }).select("id").single();
+    return json({ answer: v.answer, sources: v.sources ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
+  }
+
   // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
-  const prevUser = [...(Array.isArray(history) ? history : [])].reverse().find((m) => m?.role === "user" && m?.content);
+  const prevUser = [...hist].reverse().find((m) => m?.role === "user" && m?.content);
   const searchQuery = prevUser && question.length <= 25
     ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
     : question;
 
-  // 混合檢索：向量（語意）＋ 關鍵字（雙字詞重疊）。向量額度用完時只用關鍵字，系統照常回答。
-  let hits: any[] = [];
-  try {
-    const [qv] = await embed([searchQuery], "RETRIEVAL_QUERY");
-    const { data, error } = await sb.rpc("match_chunks", {
-      query_embedding: qv, match_count: TOP_K, min_similarity: MIN_SIM, include_staff: staff,
-    });
-    if (error) throw error;
-    hits = data ?? [];
-  } catch (e) {
-    console.error("vector search failed, keyword only:", e);
-  }
-  const { data: kw } = await sb.rpc("match_chunks_text", { q: searchQuery, match_count: TOP_K, include_staff: staff });
+  // 混合檢索平行跑：向量（語意）與關鍵字（雙字詞重疊）同時執行，省去排隊等待時間
+  const vecTask = (async () => {
+    try {
+      const [qv] = await embed([searchQuery], "RETRIEVAL_QUERY");
+      const { data, error } = await sb.rpc("match_chunks", {
+        query_embedding: qv, match_count: TOP_K, min_similarity: MIN_SIM, include_staff: staff,
+      });
+      if (error) throw error;
+      return data ?? [];
+    } catch (e) {
+      console.error("vector search failed, keyword only:", e);
+      return [];
+    }
+  })();
+  const kwTask = sb.rpc("match_chunks_text", { q: searchQuery, match_count: TOP_K, include_staff: staff }).then((r) => r.data ?? []);
+  let [hits, kw] = await Promise.all([vecTask, kwTask]);
+
   // 雙重保險：學生端絕不送出內部資料
-  if (!staff) hits = hits.filter((h) => h.audience !== "staff");
-  for (const k of kw ?? []) {
+  if (!staff) hits = hits.filter((h: any) => h.audience !== "staff");
+  for (const k of kw) {
     if (hits.length >= TOP_K + 2) break;
     if (!staff && k.audience === "staff") continue;
-    if (!hits.some((h) => h.id === k.id)) hits.push(k);
+    if (!hits.some((h: any) => h.id === k.id)) hits.push(k);
   }
 
-  let answer: string;
-  let status: "full" | "partial" | "none" = "none";
   let sources = [...new Set((hits ?? []).map((h: any) => h.source))] as string[];
   const top = hits?.[0]?.similarity ?? null;
+  const internalAll = staff ? [...new Set(hits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
 
   if (!hits?.length) {
-    answer = staff
+    const answer = staff
       ? "目前知識庫沒有這項內部資料，歡迎把處理經驗寫成筆記分享，審核後會加入知識庫。"
       : "目前知識庫沒有相關資訊，建議洽詢東華大學教務處綜合業務組（03-8906143）。";
-  } else {
-    const ctx = hits.map((h: any, i: number) =>
-      `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${h.content}`).join("\n\n");
-    const contents = (Array.isArray(history) ? history : []).slice(-4).map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content).slice(0, 1500) }],
-    }));
-    contents.push({ role: "user", parts: [{ text: `參考資料：\n${ctx}\n\n問題：${question}` }] });
-    let data;
+    const { data: logRow } = await sb.from("chat_logs").insert({
+      question, answer, sources: [], top_score: top, answered: false, status: "none", role,
+    }).select("id").single();
+    return json({ answer, sources: [], internal: [], top_score: top, log_id: logRow?.id ?? null });
+  }
+
+  const ctx = hits.map((h: any, i: number) =>
+    `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${h.content}`).join("\n\n");
+  const contents = hist.slice(-4).map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content).slice(0, 1500) }],
+  }));
+  contents.push({ role: "user", parts: [{ text: `參考資料：\n${ctx}\n\n問題：${question}` }] });
+  const reqBody = {
+    systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
+    contents,
+    generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+  };
+
+  // 串流模式：邊產生邊送到前端，不到 1 秒就會開始顯示文字
+  if (stream) {
+    let upstream: Response;
     try {
-      data = await gemini(`models/${GEMINI_MODEL}:generateContent`, {
-        systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
-        contents,
-        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
-      });
+      upstream = await geminiStreamFetch(`models/${GEMINI_MODEL}:streamGenerateContent`, reqBody);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("chat generate failed:", msg);
+      console.error("chat stream failed:", msg);
       if (/Gemini (429|500|503)/.test(msg)) {
         return json({ error: "目前詢問人數較多或系統暫時忙碌，請稍後再試；若有急需，請洽詢東華大學教務處綜合業務組（03-8906143）。" }, 503);
       }
       throw e;
     }
-    answer = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("").trim()
-      || "抱歉，暫時無法產生回答，請稍後再試。";
-    // 由 AI 自己回報是否真的答得出來；沒有標記時用文字判斷
-    const m = answer.match(STATUS_TAG);
-    answer = answer.replace(STATUS_TAG, "").trim();
-    let found: "full" | "partial" | "none" | null =
-      m ? ({ 完整: "full", 部分: "partial", 無資料: "none" } as const)[m[1] as "完整" | "部分" | "無資料"] : null;
-    for (const [re, st] of STATUS_TEXT) {
-      if (re.test(answer)) { answer = answer.replace(re, "").trim(); found ??= st; }
-    }
-    status = found ?? (NO_INFO.test(answer) ? (answer.length < 90 ? "none" : "partial") : "full");
-    // AI 說「完整」但答案裡出現「知識庫沒有」：至少算部分回答
-    if (status === "full" && NO_INFO.test(answer)) status = "partial";
-    // 我們自己的標記不該出現在答案中間
-    answer = answer.replace(/[【\[]\s*(完整|部分|無資料)\s*[】\]]/g, "").trim();
-    if (status === "none") sources = [];
+
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+    const body = new ReadableStream({
+      async start(controller) {
+        const send = (obj: unknown) => controller.enqueue(enc.encode(`data: ${JSON.stringify(obj)}\n\n`));
+        let raw = "";
+        let buf = "";
+        try {
+          const reader = upstream.body!.getReader();
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const payload = line.slice(5).trim();
+              if (!payload || payload === "[DONE]") continue;
+              try {
+                const chunk = JSON.parse(payload);
+                const text = chunk?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+                if (text) {
+                  raw += text;
+                  send({ type: "delta", text });
+                }
+              } catch {}
+            }
+          }
+          const { answer, status } = cleanAnswer(raw);
+          const finalSources = status === "none" ? [] : sources;
+          const finalInternal = internalAll.filter((x) => finalSources.includes(x));
+          const { data: logRow } = await sb.from("chat_logs").insert({
+            question, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
+          }).select("id").single();
+          if (cacheKey && status === "full") {
+            await sb.from("app_cache").upsert({
+              key: cacheKey,
+              value: { answer, sources: finalSources, top_score: top },
+              updated_at: new Date().toISOString(),
+            });
+          }
+          send({ type: "done", answer, sources: finalSources, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
+        } catch (e) {
+          console.error("stream read error:", e);
+          send({ type: "error", error: "回答過程中連線中斷，請再試一次。" });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+    return new Response(body, {
+      headers: { ...CORS, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" },
+    });
   }
+
+  // 非串流模式（向下相容）
+  let data;
+  try {
+    data = await gemini(`models/${GEMINI_MODEL}:generateContent`, reqBody);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("chat generate failed:", msg);
+    if (/Gemini (429|500|503)/.test(msg)) {
+      return json({ error: "目前詢問人數較多或系統暫時忙碌，請稍後再試；若有急需，請洽詢東華大學教務處綜合業務組（03-8906143）。" }, 503);
+    }
+    throw e;
+  }
+  const raw = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "";
+  const { answer, status } = cleanAnswer(raw);
+  if (status === "none") sources = [];
 
   const { data: logRow } = await sb.from("chat_logs").insert({
     question, answer, sources, top_score: top, answered: status === "full", status, role,
   }).select("id").single();
-  const internal = staff ? [...new Set(hits.filter((h) => h.audience === "staff").map((h) => h.source))] : [];
-  return json({ answer, sources, internal: internal.filter((x) => sources.includes(x)), top_score: top, log_id: logRow?.id ?? null });
+  if (cacheKey && status === "full") {
+    await sb.from("app_cache").upsert({
+      key: cacheKey,
+      value: { answer, sources, top_score: top },
+      updated_at: new Date().toISOString(),
+    });
+  }
+  return json({ answer, sources, internal: internalAll.filter((x) => sources.includes(x)), top_score: top, log_id: logRow?.id ?? null });
 }
 
 async function feedback(id: number, helpful: boolean, ip = "unknown") {
@@ -290,6 +422,7 @@ async function ingest(source: string, text: string, append = false, audience = "
   const rows = chunks.map((content, i) => ({ source, content, embedding: vecs[i], audience }));
   const { error } = await sb.from("kb_chunks").insert(rows);
   if (error) throw error;
+  await clearQaCache();
   return json({ ok: true, source, chunks: chunks.length, audience });
 }
 
@@ -558,9 +691,9 @@ Deno.serve(async (req) => {
     if (action === "chat") {
       if (body.staff_key !== undefined) {
         if (!isStaff(body.staff_key)) return json({ error: "行政人員密碼錯誤" }, 401);
-        return await chat(body.question, body.history, "staff", ip);
+        return await chat(body.question, body.history, "staff", ip, !!body.stream);
       }
-      return await chat(body.question, body.history, "student", ip);
+      return await chat(body.question, body.history, "student", ip, !!body.stream);
     }
     if (action === "feedback") return await feedback(Number(body.id), body.helpful, ip);
     if (action === "process_queue") return await processQueue();
@@ -585,6 +718,7 @@ Deno.serve(async (req) => {
       const audience = body.audience === "staff" ? "staff" : "public";
       const { error } = await sb.from("kb_chunks").update({ audience }).eq("source", body.source);
       if (error) throw error;
+      await clearQaCache();
       return json({ ok: true });
     }
     if (action === "list") return await list();
@@ -593,6 +727,7 @@ Deno.serve(async (req) => {
     if (action === "delete") {
       const { error } = await sb.from("kb_chunks").delete().eq("source", body.source);
       if (error) throw error;
+      await clearQaCache();
       return json({ ok: true });
     }
     return json({ error: "未知的 action" }, 400);
