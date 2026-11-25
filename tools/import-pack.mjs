@@ -1,5 +1,5 @@
 // 一鍵匯入 115 學年度漏網官方知識包（tools/kb_pack_115.json）＋ 115 校務行事曆線上版
-// 用法（PowerShell）：$env:ADMIN_KEY="你的管理密碼"; node tools/import-pack.mjs
+// 用法（控制台按 8 即可自動執行，或 PowerShell：$env:ADMIN_KEY="管理密碼"; node tools/import-pack.mjs）
 // 特色：自動限速（每份間隔 1.5 秒）、只消耗約 25 次免費向量額度，安全不觸發 429。
 
 import { readFileSync } from "node:fs";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const URL = "https://krbrxahyebnvjnxievjb.supabase.co/functions/v1/chat";
 const KEY = process.env.ADMIN_KEY;
 if (!KEY) {
-  console.error('請先設定管理密碼：$env:ADMIN_KEY="你的管理密碼"; node tools/import-pack.mjs');
+  console.error('請先設定管理密碼（或直接用桌面控制台按 8 執行）');
   process.exit(1);
 }
 

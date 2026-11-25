@@ -106,6 +106,21 @@ function Invoke-Eval {
   Wait-Key
 }
 
+function Invoke-ImportPack {
+  Show-Step '一鍵匯入 115 官方知識包：10 份文件，約 25 秒（自動限速，不爆免費額度）'
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host '需要先安裝 Node.js（選 LTS 版本）。' -ForegroundColor Yellow
+    Start-Process 'https://nodejs.org'
+    return Show-Fail
+  }
+  $sec = Read-Host '請輸入管理密碼（輸入時不會顯示）' -AsSecureString
+  $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+  $env:ADMIN_KEY = $plain
+  node tools/import-pack.mjs
+  Remove-Item Env:ADMIN_KEY -ErrorAction SilentlyContinue
+  Wait-Key
+}
+
 while ($true) {
   Clear-Host
   Write-Host '======================================' -ForegroundColor DarkGreen
@@ -120,6 +135,7 @@ while ($true) {
   Write-Host '  5. 開啟管理後台'
   Write-Host '  6. 開啟 Supabase 控制台'
   Write-Host '  7. 跑正確率測試（15 題）'
+  Write-Host '  8. 一鍵匯入 115 官方知識包（10 份）'
   Write-Host ''
   Write-Host '  0. 離開'
   Write-Host ''
@@ -134,6 +150,7 @@ while ($true) {
     '5' { Start-Process "${site}admin.html" }
     '6' { Start-Process "https://supabase.com/dashboard/project/$ref" }
     '7' { Invoke-Eval }
+    '8' { Invoke-ImportPack }
     '0' { exit }
   }
 }
