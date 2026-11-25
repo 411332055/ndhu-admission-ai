@@ -459,10 +459,26 @@ function mergeAndRank(vecRaw: any[], kwRaw: any[], staff: boolean) {
     else map.set(k.id, { row: k, rrf: score, vecSim: 0 });
   });
 
-  return [...map.values()]
-    .sort((a, b) => b.rrf - a.rrf || b.vecSim - a.vecSim)
-    .slice(0, TOP_K)
-    .map((x) => x.row);
+  const sorted = [...map.values()].sort((a, b) => b.rrf - a.rrf || b.vecSim - a.vecSim);
+  // 來源多樣性保護：同一份長文件先最多佔 2 段，避免十幾段的長簡章把其他相關文件（例如聯絡電話表）全部擠掉
+  const picked: any[] = [];
+  const rest: any[] = [];
+  const srcCount = new Map<string, number>();
+  for (const x of sorted) {
+    const src = String(x.row?.source ?? "");
+    const c = srcCount.get(src) ?? 0;
+    if (c < 2 && picked.length < TOP_K) {
+      picked.push(x.row);
+      srcCount.set(src, c + 1);
+    } else {
+      rest.push(x.row);
+    }
+  }
+  for (const r of rest) {
+    if (picked.length >= TOP_K) break;
+    picked.push(r);
+  }
+  return picked;
 }
 
 async function geminiStreamFetch(path: string, body: unknown) {
