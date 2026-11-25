@@ -1,0 +1,10 @@
+{
+  "name": "東華大學入學行政 AI 助理",
+  "short_name": "東華入學AI",
+  "description": "國立東華大學 115 學年度入學行政官方知識庫 AI 問答助理",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f2f4f3",
+  "theme_color": "#1b6b46",
+  "lang": "zh-Hant"
+}

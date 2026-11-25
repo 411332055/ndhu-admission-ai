@@ -2,11 +2,17 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="東華入學AI">
+<meta name="theme-color" content="#f2f4f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0f0d" media="(prefers-color-scheme: dark)">
 <title>東華大學入學行政 AI 助理</title>
+<link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://krbrxahyebnvjnxievjb.supabase.co" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <div class="app">
@@ -46,8 +52,8 @@
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
 </div>
 
-<script src="config.js?v=6"></script>
-<script src="common.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="common.js?v=7"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
 const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, showError, idleAbort, warmup } = window.APP_UI;
