@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://krbrxahyebnvjnxievjb.supabase.co" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body class="staff">
 <div class="app">
@@ -96,8 +96,8 @@
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
 </div>
 
-<script src="config.js?v=1"></script>
-<script src="common.js?v=1"></script>
+<script src="config.js?v=2"></script>
+<script src="common.js?v=2"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
 const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, showError, idleAbort } = window.APP_UI;
@@ -168,11 +168,17 @@ function add(role, html) {
   row.scrollIntoView({ behavior: 'smooth', block: 'end' });
   return row.firstChild;
 }
+const srcPill = (s, links, extra = '') => {
+  const u = links && links[s];
+  return u && /^https:\/\//.test(u)
+    ? `<a class="src-pill src-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="打開官方原始文件">${esc(s)} ↗${extra}</a>`
+    : `<span class="src-pill">${esc(s)}${extra}</span>`;
+};
 function renderFinal(bubble, question, d, persist = true) {
   let html = md(d.answer);
   if (d.images?.length) html += renderImages(d.images);
   if (d.sources?.length) html += `<div class="sources"><span>📄 資料來源：</span>${d.sources.map(s =>
-    `<span class="src-pill">${esc(s)}${d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : ''}</span>`).join('')}</div>`;
+    srcPill(s, d.links, d.internal?.includes(s) ? '<span class="badge-int">🔒 內部</span>' : '')).join('')}</div>`;
   const fups = suggestFollowups(question, d.sources || [], true);
   if (fups.length) {
     html += `<div class="followups"><span class="followups-label">💡 延伸查詢：</span>${fups.map(f => `<button type="button" class="followup-chip">${esc(f)}</button>`).join('')}</div>`;
@@ -194,7 +200,7 @@ function renderFinal(bubble, question, d, persist = true) {
   bar.appendChild(cp);
   bubble.appendChild(bar);
   if (persist) {
-    savedTurns.push({ q: question, answer: d.answer, sources: d.sources || [], images: d.images || [], internal: d.internal || [] });
+    savedTurns.push({ q: question, answer: d.answer, sources: d.sources || [], links: d.links || {}, images: d.images || [], internal: d.internal || [] });
     saveTurns();
   }
   history.push({ role: 'user', content: question }, { role: 'assistant', content: d.answer });

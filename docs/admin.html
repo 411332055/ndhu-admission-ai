@@ -6,7 +6,7 @@
 <title>知識庫管理｜東華大學入學行政 AI 助理</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
@@ -113,11 +113,21 @@
       <table><thead><tr><th>問題</th><th>狀態</th><th>時間</th><th></th></tr></thead>
         <tbody id="logList"></tbody></table>
     </section>
+
+    <section class="panel" id="opsPanel" hidden>
+      <h2>🔧 系統狀態</h2>
+      <div class="status" id="opsSummary"></div>
+      <h3 class="sub-h">正確率測試紀錄</h3>
+      <div class="status">在控制台按 7 執行（15 題，約 3 分鐘）。</div>
+      <table><thead><tr><th>時間</th><th>完全正確</th><th>部分正確</th><th>題數</th></tr></thead><tbody id="evalList"></tbody></table>
+      <h3 class="sub-h">最近錯誤</h3>
+      <table><thead><tr><th>時間</th><th>位置</th><th>訊息</th></tr></thead><tbody id="errList"></tbody></table>
+    </section>
   </main>
 </div>
 
-<script src="config.js?v=1"></script>
-<script src="common.js?v=1"></script>
+<script src="config.js?v=2"></script>
+<script src="common.js?v=2"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
 const $ = id => document.getElementById(id);
@@ -186,7 +196,8 @@ function renderSources() {
     .sort((a, b) => b.updated.localeCompare(a.updated));
   $('srcList').innerHTML = list.length ? list.map(s => {
     const c = catMap[classifySource(s)] || catMap.other;
-    return `<tr><td><span class="cat-badge ${c.cls}">${c.label}</span>${esc(s.source)}</td>
+    const stale = isStale(s);
+    return `<tr><td><span class="cat-badge ${c.cls}">${c.label}</span>${esc(s.source)}${stale ? ` <span class="tag warn" title="${esc(stale)}">可能過期</span>` : ''}</td>
      <td><button class="ghost aud-btn ${s.audience === 'staff' ? 'staff' : ''}" data-aud="${esc(s.source)}" data-cur="${s.audience}" title="點一下切換">${s.audience === 'staff' ? '🔒 內部' : '公開'}</button></td>
      <td>${s.chunks}</td><td>${fmt(s.updated)}</td>
      <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`;
@@ -201,6 +212,14 @@ function renderSources() {
     if (!confirm(`確定刪除「${b.dataset.del}」？`)) return;
     await api({ action: 'delete', source: b.dataset.del }); loadSources();
   });
+}
+// 資料時效提醒：超過 180 天沒更新，或名稱寫了學年度但不是 115／116
+function isStale(s) {
+  const days = (Date.now() - Date.parse(s.updated)) / 86400000;
+  const yr = s.source.match(/(1\d{2})\s*[-學]?\s*(學年度|學年|年|-\d)/);
+  if (yr && +yr[1] < 115) return `名稱是 ${yr[1]} 學年度的資料`;
+  if (days > 180) return `已經 ${Math.round(days)} 天沒有更新`;
+  return '';
 }
 let lastStatsData = null, lastNotesData = [];
 function renderDashboard() {
@@ -228,6 +247,10 @@ function renderDashboard() {
     gapCnt = String(lastStatsData.unanswered ?? 0);
     gapSub = lastStatsData.unanswered ? '需補充知識或經驗' : '已全數補齊 🎉';
   }
+  const ev = lastStatsData?.evalRuns?.[0];
+  const use = lastStatsData?.usageToday || {};
+  const lim = lastStatsData?.usageLimits || { embed: 1000, generate: 1500 };
+  const warn = (use.generate || 0) / lim.generate > 0.8 || (use.embed || 0) / lim.embed > 0.8;
   const approvedNotes = lastNotesData.filter(n => n.status === 'approved').length;
   const pendingNotes = lastNotesData.filter(n => n.status === 'pending').length;
 
@@ -260,6 +283,23 @@ function renderDashboard() {
       <span class="kpi-sub">${gapSub}</span>
     </div>
     <div class="kpi-card">
+      <span class="kpi-label">⏱️ 缺口平均補齊</span>
+      <span class="kpi-val">${lastStatsData?.avgResolveDays != null ? lastStatsData.avgResolveDays + ' 天' : '—'}</span>
+      <span class="kpi-sub">${lastStatsData?.resolvedCount ? `已補齊 ${lastStatsData.resolvedCount} 則（從提問到按「已補充」）` : '按「已補充」後開始統計'}</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">✅ 正確率測試</span>
+      <span class="kpi-val">${ev ? Math.round(ev.passed * 100 / ev.total) + '%' : '—'}</span>
+      <span class="kpi-sub">${ev ? `最近一次 ${ev.passed}/${ev.total} 題完全正確（${fmt(ev.created_at)}）` : '尚未執行（控制台按 7）'}</span>
+      <div class="kpi-bar"><span style="width:${ev ? Math.round(ev.passed * 100 / ev.total) : 0}%"></span></div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">⚡ 今日 Gemini 用量</span>
+      <span class="kpi-val">${use.generate || 0} 次</span>
+      <span class="kpi-sub">生成 ${use.generate || 0}／約 ${lim.generate}；向量 ${use.embed || 0}／${lim.embed}${warn ? '　⚠️ 接近免費上限' : ''}</span>
+      <div class="kpi-bar"><span style="width:${Math.min(100, Math.round(Math.max((use.generate || 0) / lim.generate, (use.embed || 0) / lim.embed) * 100))}%"></span></div>
+    </div>
+    <div class="kpi-card">
       <span class="kpi-label">💡 SECI 經驗筆記</span>
       <span class="kpi-val">${approvedNotes} 則</span>
       <span class="kpi-sub">已入庫（待審核 ${pendingNotes} 則）</span>
@@ -281,6 +321,7 @@ async function loadStats() {
   lastLogs = d.recent || [];
   renderDashboard();
   $('exportCsv').disabled = !lastLogs.length;
+  renderOps(d);
   const fbText = (d.helpfulYes || d.helpfulNo) ? `；使用者回饋 👍 ${d.helpfulYes || 0}、👎 ${d.helpfulNo || 0}` : '';
   status('statSummary', `最近 ${d.total} 則提問中，有 ${d.unanswered} 則待補充（部分回答、無資料或回報沒幫到）${d.blocked ? `，攔截 ${d.blocked} 則安全提問` : ''}${fbText}。點問題可看 AI 的回答；補好資料後按「已補充」。`);
   const label = { full: ['已回答', 'ok'], partial: ['部分回答', 'warn'], none: ['知識缺口', ''], blocked: ['🛡️ 已攔截', 'staff'] };
@@ -303,6 +344,17 @@ async function loadStats() {
   });
 }
 $('gapOnly').onchange = () => loadStats();
+function renderOps(d) {
+  $('opsPanel').hidden = false;
+  const use = d.usageToday || {}, lim = d.usageLimits || { embed: 1000, generate: 1500 };
+  status('opsSummary', `今天（美西時間，Gemini 額度在台灣時間下午 3–4 點重置）已用：生成 ${use.generate || 0} 次、向量 ${use.embed || 0} 次。免費上限約生成 ${lim.generate}、向量 ${lim.embed}。`);
+  const runs = d.evalRuns || [];
+  $('evalList').innerHTML = runs.length ? runs.map(r => `<tr><td>${fmt(r.created_at)}</td><td>${r.passed}</td><td>${r.partial}</td><td>${r.total}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="status">還沒有測試紀錄</td></tr>';
+  const errs = d.errors || [];
+  $('errList').innerHTML = errs.length ? errs.map(e => `<tr><td>${fmt(e.created_at)}</td><td>${esc(e.action || '')}</td><td>${esc(e.message || '')}</td></tr>`).join('')
+    : '<tr><td colspan="3" class="status">沒有錯誤 🎉</td></tr>';
+}
 $('exportCsv').onclick = () => {
   if (!lastLogs.length) return;
   const csvCell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
@@ -330,15 +382,24 @@ async function loadNotes() {
   const label = { pending: ['待審核', 'warn'], approved: ['已通過', 'ok'], rejected: ['未採用', ''] };
   $('noteList').innerHTML = notes.map(n => {
     const [t, c] = label[n.status];
-    return `<div class="note"><div class="note-head"><span class="tag ${c}">${t}</span> <b>${esc(n.title)}</b>
+    const revs = Array.isArray(n.revisions) && n.revisions.length ? `<span class="tag" title="修改前的版本已保留">改過 ${n.revisions.length} 次</span>` : '';
+    if (n.status === 'pending') {
+      return `<div class="note"><div class="note-head"><span class="tag ${c}">${t}</span>
+        <span class="status">${n.author ? esc(n.author) + '・' : ''}${fmt(n.created_at)}</span></div>
+        <input type="text" class="note-title" id="nt${n.id}" value="${esc(n.title)}">
+        <textarea class="note-body" id="nc${n.id}">${esc(n.content)}</textarea>
+        <div class="status">可以直接修改文字再通過；修改前的原文會保留在版本紀錄。</div>
+        <div class="row"><button class="primary" data-ok="${n.id}">通過，加入內部知識庫</button>
+        <button class="ghost" data-no="${n.id}">不採用</button></div></div>`;
+    }
+    return `<div class="note"><div class="note-head"><span class="tag ${c}">${t}</span> <b>${esc(n.title)}</b> ${revs}
       <span class="status">${n.author ? esc(n.author) + '・' : ''}${fmt(n.created_at)}</span></div>
-      <div class="ans">${esc(n.content)}</div>
-      ${n.status === 'pending' ? `<div class="row"><button class="primary" data-ok="${n.id}">通過，加入內部知識庫</button>
-        <button class="ghost" data-no="${n.id}">不採用</button></div>` : ''}</div>`;
+      <div class="ans">${esc(n.content)}</div></div>`;
   }).join('') || '<div class="status">還沒有人分享筆記</div>';
   document.querySelectorAll('[data-ok],[data-no]').forEach(b => b.onclick = async () => {
     b.disabled = true;
-    try { await api({ action: 'review_note', id: Number(b.dataset.ok || b.dataset.no), approve: !!b.dataset.ok }); }
+    const id = Number(b.dataset.ok || b.dataset.no);
+    try { await api({ action: 'review_note', id, approve: !!b.dataset.ok, title: $('nt' + id)?.value, content: $('nc' + id)?.value }); }
     catch (e) { alert(e.message); }
     loadNotes(); loadSources();
   });

@@ -91,6 +91,21 @@ function Invoke-Deploy {
   Wait-Key
 }
 
+function Invoke-Eval {
+  Show-Step '正確率測試：15 題，約 3 分鐘（每分鐘最多 8 題，會自動放慢）'
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host '需要先安裝 Node.js（選 LTS 版本）。' -ForegroundColor Yellow
+    Start-Process 'https://nodejs.org'
+    return Show-Fail
+  }
+  $sec = Read-Host '請輸入管理密碼（輸入時不會顯示）' -AsSecureString
+  $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+  $env:ADMIN_KEY = $plain
+  node tools/eval.mjs
+  Remove-Item Env:ADMIN_KEY -ErrorAction SilentlyContinue
+  Wait-Key
+}
+
 while ($true) {
   Clear-Host
   Write-Host '======================================' -ForegroundColor DarkGreen
@@ -104,6 +119,7 @@ while ($true) {
   Write-Host '  4. 開啟行政人員端'
   Write-Host '  5. 開啟管理後台'
   Write-Host '  6. 開啟 Supabase 控制台'
+  Write-Host '  7. 跑正確率測試（15 題）'
   Write-Host ''
   Write-Host '  0. 離開'
   Write-Host ''
@@ -117,6 +133,7 @@ while ($true) {
     '4' { Start-Process "${site}staff.html" }
     '5' { Start-Process "${site}admin.html" }
     '6' { Start-Process "https://supabase.com/dashboard/project/$ref" }
+    '7' { Invoke-Eval }
     '0' { exit }
   }
 }

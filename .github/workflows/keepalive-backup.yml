@@ -1,0 +1,38 @@
+name: 保持喚醒與備份
+on:
+  schedule:
+    - cron: "17 1 * * *"   # 每天台灣時間 09:17：呼叫 health，避免 Supabase 免費專案一週沒活動被暫停
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 呼叫 health
+        run: |
+          curl -fsS -X POST https://krbrxahyebnvjnxievjb.supabase.co/functions/v1/chat \
+            -H "Content-Type: application/json" -d '{"action":"health"}'
+  # 每週一（或手動執行時）把「公開」知識庫匯出成 JSON 存進 backup/，內部資料不放進公開的 repo
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 判斷今天要不要備份
+        id: day
+        run: echo "dow=$(TZ=Asia/Taipei date +%u)" >> "$GITHUB_OUTPUT"
+      - name: 匯出公開知識庫
+        if: github.event_name == 'workflow_dispatch' || steps.day.outputs.dow == '1'
+        run: |
+          mkdir -p backup
+          curl -fsS -X POST https://krbrxahyebnvjnxievjb.supabase.co/functions/v1/chat \
+            -H "Content-Type: application/json" -d '{"action":"export_public"}' -o backup/kb_public.json
+          node -e "const d=require('./backup/kb_public.json'); if(!d.kb_chunks||!d.kb_chunks.length) process.exit(1); console.log('chunks', d.chunks)"
+      - name: 存進 repo
+        if: github.event_name == 'workflow_dispatch' || steps.day.outputs.dow == '1'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add backup/kb_public.json
+          git diff --cached --quiet || git commit -m "備份：公開知識庫 $(TZ=Asia/Taipei date +%F)"
+          git push

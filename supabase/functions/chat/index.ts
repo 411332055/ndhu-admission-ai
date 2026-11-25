@@ -70,7 +70,7 @@ const SYSTEM_STAFF = `你是國立東華大學入學行政「行政人員端」A
 參考資料中標示〔內部〕的是內部作業知識（流程、經驗、例外處理），可以直接引用；標示〔公開〕的是對外公告的規定。
 回答時：先給處理步驟或結論，再補充依據；涉及例外處理時說明要會辦或請示哪個單位（資料有寫才說）。
 規則：
-1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔、語氣友善專業。
+1. 只能根據「參考資料」回答，條列清楚、簡潔、語氣友善專業。預設用繁體中文；使用者用其他語言提問時用同一種語言回答。
 2. 參考資料沒有的內容，直接說明「目前知識庫還沒有這項內部資料」，一句話邀請對方處理後到「分享經驗」寫成筆記，不要客套開場或稱讚問題，絕對不要自行編造。
 3. 日期、名額、金額等數字必須和參考資料完全一致。若參考資料包含平面圖或地圖，系統會自動把圖片附在回覆下方，你可以順帶提醒使用者參考下方的平面圖（點擊可放大）。
 4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答，並附上實際引用的參考資料編號（例如【完整|1,2】、【部分|1】、【無資料】）：
@@ -81,7 +81,7 @@ const SYSTEM_STAFF = `你是國立東華大學入學行政「行政人員端」A
 
 const SYSTEM = `你是國立東華大學入學行政 AI 助理，語氣親切、有耐心、讓人感到被尊重。
 規則：
-1. 只能根據「參考資料」回答，用繁體中文，條列清楚、簡潔。
+1. 只能根據「參考資料」回答，條列清楚、簡潔。預設用繁體中文；使用者用英文或其他語言提問時，就用同一種語言回答（專有名詞可附中文）。
 2. 參考資料沒有的內容，用親切但簡短的語氣說明「目前知識庫還沒有這方面的資訊」，建議洽詢承辦單位：參考資料有寫該業務的承辦單位與電話（例如宿舍找生活輔導組、繳費找出納組）就轉介那個單位，沒有寫才轉介東華大學教務處綜合業務組（03-8906143），並告訴對方問題已記錄、之後會補充。已經完整回答的問題不要再附加轉介或「問題已記錄」的話。不要每次都用「你的問題問得很好」這類稱讚開場，絕對不要自行編造。
 3. 日期、名額、金額等數字必須和參考資料完全一致。若參考資料包含平面圖或地圖，系統會自動把圖片附在回覆下方，你可以順帶提醒使用者參考下方的平面圖（點擊可放大）。
 4. 回答最後另起一行，只寫一個標記，說明參考資料是否足以回答，並附上實際引用的參考資料編號（例如【完整|1,2】、【部分|1】、【無資料】）：
@@ -103,6 +103,54 @@ const STATUS_TEXT: [RegExp, "full" | "partial" | "none"][] = [
   [/\n\s*(標記[:：]?\s*)?(參考資料)?只能回答一部分[^\n]*$/, "partial"],
   [/\n\s*(標記[:：]?\s*)?參考資料完全無法回答[^\n]*$/, "none"],
 ];
+
+// 個資遮蔽：身分證字號、學號／長數字、手機、Email 在送給 AI 與存進紀錄前先遮掉
+function maskPii(t: string) {
+  return String(t ?? "")
+    .replace(/\b([A-Za-z])[12489]\d{8}\b/g, (m) => m.slice(0, 3) + "****" + m.slice(-3))
+    .replace(/\b09\d{2}[-\s]?\d{3}[-\s]?\d{3}\b/g, "09**-***-***")
+    .replace(/\b[4-8]\d{8}\b/g, (m) => m.slice(0, 3) + "****" + m.slice(-2))
+    .replace(/\b\d{13,19}\b/g, "****")
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "***@***");
+}
+const looksEnglish = (t: string) => /[a-z]/i.test(t) && !/[一-鿿]/.test(t);
+
+// 用量與錯誤紀錄（失敗不影響主流程）
+function bumpUsage(kind: string, n = 1) {
+  sb.rpc("bump_usage", { p_kind: kind, p_n: n }).then(() => {}, () => {});
+}
+function logError(action: string, message: unknown) {
+  const msg = (message instanceof Error ? message.message : String(message ?? "")).slice(0, 500);
+  sb.from("error_logs").insert({ action, message: msg }).then(() => {}, () => {});
+}
+
+// 知識缺口通知：設定 NOTIFY_WEBHOOK（Discord／Slack 的 Incoming Webhook 網址）才會啟用，每小時最多 6 則
+const NOTIFY_WEBHOOK = Deno.env.get("NOTIFY_WEBHOOK") ?? "";
+async function notifyGap(question: string, status: string, answer: string) {
+  if (!NOTIFY_WEBHOOK) return;
+  try {
+    if (!(await allowRequest("notify:gap", 6, 3600))) return;
+    const label = status === "none" ? "沒有資料" : "只答了一部分";
+    const text = `【入學 AI 助理｜知識缺口】${label}\n問題：${question}\nAI 回答：${answer.slice(0, 300)}\n到管理後台補資料後按「已補充」。`;
+    await fetch(NOTIFY_WEBHOOK, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text, text }) });
+  } catch (e) { console.error("notify failed:", e); }
+}
+
+// 來源原始網址：每份文件第一段會帶「（原始網址：…）」，回傳給前端做成可點的連結
+async function sourceLinks(names: string[]) {
+  const out: Record<string, string> = {};
+  const list = [...new Set((names ?? []).filter(Boolean))].slice(0, 8);
+  if (!list.length) return out;
+  try {
+    const { data } = await sb.from("kb_chunks").select("source, content").in("source", list).ilike("content", "%原始網址%").limit(40);
+    for (const r of data ?? []) {
+      if (out[r.source]) continue;
+      const m = String(r.content).match(/原始網址[:：]\s*(https?:\/\/[^\s，。、）)】"]+)/);
+      if (m) out[r.source] = m[1];
+    }
+  } catch (e) { console.error("sourceLinks failed:", e); }
+  return out;
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -137,7 +185,11 @@ async function gemini(path: string, body: unknown) {
         body: JSON.stringify(body),
       });
       const data = await r.json().catch(() => ({}));
-      if (r.ok) return data;
+      if (r.ok) {
+        if (p.includes(":batchEmbedContents")) bumpUsage("embed", (body as any)?.requests?.length ?? 1);
+        else bumpUsage("generate");
+        return data;
+      }
       const msg = String(data?.error?.message ?? JSON.stringify(data));
       const perDay = /per day/i.test(msg);
       lastErr = new Error(`Gemini ${r.status}: ${msg}`);
@@ -181,23 +233,32 @@ async function embed(texts: string[], taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVA
   return out;
 }
 
-function splitText(text: string, size = CHUNK_SIZE, overlap = OVERLAP) {
+// 切段：優先在「第X條」「一、」「(一)」「Q1：」「1.」等條文或標題開頭斷開，避免一條規定被切成兩半；
+// 每段前面加上【文件名稱】，讓檢索與 AI 都知道這段出自哪份文件
+const HEADING = /^(第\s*[一二三四五六七八九十百零〇\d]+\s*[條章節款]|[一二三四五六七八九十]+\s*[、.．]|[（(]\s*[一二三四五六七八九十\d]+\s*[）)]|Q\s*\d+\s*[:：]|\d{1,2}\s*[.、．](?!\d))/;
+function splitText(text: string, size = CHUNK_SIZE, overlap = OVERLAP, title = "") {
   const paras = text.replace(/[ \t]+/g, " ").split(/\n+/).map((p) => p.trim()).filter(Boolean);
+  const prefix = title ? `【${title.slice(0, 60)}】\n` : "";
+  const room = Math.max(200, size - prefix.length);
   const chunks: string[] = [];
   let buf = "";
+  const flush = () => { if (buf.trim()) chunks.push(prefix + buf.trim()); buf = ""; };
   for (let p of paras) {
-    if (buf.length + p.length <= size) {
+    // 新條文開頭且目前這段已經有一定長度：先收尾，讓條文自成一段
+    if (HEADING.test(p) && buf.length >= room * 0.45 && buf.length + p.length > room * 0.8) flush();
+    if (buf.length + p.length <= room) {
       buf += p + "\n";
       continue;
     }
-    if (buf) chunks.push(buf.trim());
-    while (p.length > size) {
-      chunks.push(p.slice(0, size));
-      p = p.slice(size - overlap);
+    const tail = buf.slice(-overlap);
+    flush();
+    while (p.length > room) {
+      chunks.push(prefix + p.slice(0, room));
+      p = p.slice(room - overlap);
     }
-    buf = (buf ? buf.slice(-overlap) : "") + p + "\n";
+    buf = (HEADING.test(p) ? "" : tail) + p + "\n";
   }
-  if (buf.trim()) chunks.push(buf.trim());
+  flush();
   return chunks;
 }
 
@@ -300,7 +361,7 @@ async function geminiStreamFetch(path: string, body: unknown) {
         headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
         body: JSON.stringify(body),
       });
-      if (r.ok && r.body) return r;
+      if (r.ok && r.body) { bumpUsage("generate"); return r; }
       const data = await r.json().catch(() => ({}));
       const msg = String(data?.error?.message ?? JSON.stringify(data));
       const perDay = /per day/i.test(msg);
@@ -325,7 +386,7 @@ async function geminiStreamFetch(path: string, body: unknown) {
 async function chat(
   question: string,
   history: { role: string; content: string }[] = [],
-  role: "student" | "staff" = "student",
+  role: "student" | "staff" | "test" = "student",
   ip = "unknown",
   stream = false,
   image?: { mimeType?: string; data?: string } | null,
@@ -340,7 +401,7 @@ async function chat(
     if (clean.length > 8 * 1024 * 1024) return json({ error: "圖片太大，請換一張較小的圖片" }, 413);
     imgPart = { mimeType: m === "image/jpg" ? "image/jpeg" : m, data: clean };
   }
-  question = String(question ?? "").trim().slice(0, 500);
+  question = maskPii(String(question ?? "").trim().slice(0, 500));
   if (!question && imgPart) question = "請說明這張圖片的內容，並結合東華大學入學規定回答我該注意什麼。";
   if (!question) return json({ error: "請輸入問題" }, 400);
   if (SENSITIVE.test(question)) {
@@ -371,7 +432,8 @@ async function chat(
     const { data: logRow } = await sb.from("chat_logs").insert({
       question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
     }).select("id").single();
-    return json({ answer: v.answer, sources: v.sources ?? [], images: v.images ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
+    const links = v.links ?? await sourceLinks(v.sources ?? []);
+    return json({ answer: v.answer, sources: v.sources ?? [], links, images: v.images ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
   }
 
   const searchQuery = typeof expandedRes === "string" && expandedRes.trim() ? expandedRes.trim() : baseQuery;
@@ -421,12 +483,15 @@ async function chat(
   }
 
   if (!hits?.length && !imgPart) {
-    const answer = staff
+    const answer = !staff && looksEnglish(question)
+      ? "Sorry, the knowledge base doesn't have this information yet.\n\nPlease contact the NDHU Office of Academic Affairs, General Affairs Section (**03-8906143**). Your question has been recorded and will be added later."
+      : staff
       ? "目前知識庫還沒有這項內部作業資料。\n\n處理完如果有心得或最新流程，歡迎到「分享經驗」分頁寫成筆記，審核後會加入內部知識庫。"
       : "抱歉，目前知識庫還沒有這方面的資訊。\n\n建議直接洽詢**東華大學教務處綜合業務組（03-8906143）**，會有專人協助你。這個問題已經記錄下來，之後會補充進知識庫。";
     const { data: logRow } = await sb.from("chat_logs").insert({
       question: logQuestion, answer, sources: [], top_score: top, answered: false, status: "none", role,
     }).select("id").single();
+    if (role === "student") notifyGap(logQuestion, "none", answer);
     return json({ answer, sources: [], internal: [], top_score: top, log_id: logRow?.id ?? null });
   }
 
@@ -456,6 +521,7 @@ async function chat(
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("chat stream failed:", msg);
+      logError("chat_stream", msg);
       if (/Gemini (404|429|500|503)/.test(msg)) {
         const fb = pickSources(hits, "partial", []);
         const asksMap = /平面圖|地圖|配置圖|幾樓|樓層|管理學院|管院|理工|人社|圖書館|圖資|資訊中心|行政大樓|總務處|教育學院|花師|原民|環境學院|藝術學院/.test(question);
@@ -510,9 +576,12 @@ async function chat(
               updated_at: new Date().toISOString(),
             }) : Promise.resolve(),
           ]);
-          send({ type: "done", answer, sources: finalSources, images: finalImages, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
+          const finalLinks = await sourceLinks(finalSources);
+          if (role === "student" && status !== "full") notifyGap(logQuestion, status, answer);
+          send({ type: "done", answer, sources: finalSources, links: finalLinks, images: finalImages, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
         } catch (e) {
           console.error("stream read error:", e);
+          logError("chat_stream_read", e);
           send({ type: "error", error: "回答過程中連線中斷，請再試一次。" });
         } finally {
           controller.close();
@@ -531,6 +600,7 @@ async function chat(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("chat generate failed:", msg);
+    logError("chat_generate", msg);
     if (/Gemini (429|500|503)/.test(msg)) {
       return json({ error: "目前詢問人數較多或系統暫時忙碌，請稍後再試；若有急需，請洽詢東華大學教務處綜合業務組（03-8906143）。" }, 503);
     }
@@ -551,7 +621,9 @@ async function chat(
       updated_at: new Date().toISOString(),
     });
   }
-  return json({ answer, sources, images, internal, top_score: top, log_id: logRow?.id ?? null });
+  if (role === "student" && status !== "full") notifyGap(logQuestion, status, answer);
+  const links = await sourceLinks(sources);
+  return json({ answer, sources, links, images, internal, top_score: top, log_id: logRow?.id ?? null });
 }
 
 async function feedback(id: number, helpful: boolean, ip = "unknown") {
@@ -569,7 +641,7 @@ async function ingest(source: string, text: string, append = false, audience = "
   text = String(text ?? "").normalize("NFKC");
   const cleanImgUrl = typeof imageUrl === "string" && /^https?:\/\//i.test(imageUrl.trim()) ? imageUrl.trim() : null;
   if (!source || !text.trim()) return json({ error: "需要 source 與 text" }, 400);
-  const chunks = splitText(text);
+  const chunks = splitText(text, CHUNK_SIZE, OVERLAP, source);
   if (chunks.length > 500) return json({ error: "內容太長，請分成多份上傳" }, 400);
   const vecs = await embed(chunks, "RETRIEVAL_DOCUMENT");
   if (!append) await sb.from("kb_chunks").delete().eq("source", source); // 同名來源先刪除再寫入（更新）
@@ -823,16 +895,37 @@ async function stats() {
       .order("created_at", { ascending: false }).limit(200));
   }
   if (error) throw error;
+  data = (data ?? []).filter((r: any) => r.role !== "test");
   const total = data?.length ?? 0;
   const gaps = (data ?? []).filter((r) => (r.status === "partial" || r.status === "none" || r.helpful === false) && !r.resolved);
   const blocked = (data ?? []).filter((r) => r.status === "blocked").length;
   const helpfulYes = (data ?? []).filter((r) => r.helpful === true).length;
   const helpfulNo = (data ?? []).filter((r) => r.helpful === false).length;
-  return json({ total, unanswered: gaps.length, blocked, helpfulYes, helpfulNo, recent: data, gaps });
+  const ops = await opsSummary();
+  return json({ total, unanswered: gaps.length, blocked, helpfulYes, helpfulNo, recent: data, gaps, ...ops });
+}
+
+// 維運摘要：今天的 Gemini 用量、最近錯誤、正確率測試紀錄、缺口補齊速度
+async function opsSummary() {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  const [u, e, ev, rs] = await Promise.all([
+    sb.from("usage_daily").select("day, kind, calls").gte("day", new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)).order("day", { ascending: false }),
+    sb.from("error_logs").select("created_at, action, message").order("id", { ascending: false }).limit(20),
+    sb.from("eval_runs").select("id, created_at, total, passed, partial").order("id", { ascending: false }).limit(10),
+    sb.from("chat_logs").select("created_at, resolved_at").not("resolved_at", "is", null).order("resolved_at", { ascending: false }).limit(100),
+  ]);
+  const usageToday: Record<string, number> = {};
+  for (const r of u.data ?? []) if (r.day === today) usageToday[r.kind] = r.calls;
+  const days = (rs.data ?? []).map((r: any) => (Date.parse(r.resolved_at) - Date.parse(r.created_at)) / 86400_000).filter((d: number) => d >= 0);
+  const avgResolveDays = days.length ? Math.round(days.reduce((a: number, b: number) => a + b, 0) / days.length * 10) / 10 : null;
+  return {
+    usageToday, usageWeek: u.data ?? [], usageLimits: { embed: 1000, generate: 1500 },
+    errors: e.data ?? [], evalRuns: ev.data ?? [], avgResolveDays, resolvedCount: days.length,
+  };
 }
 
 async function resolveGap(id: number, resolved = true) {
-  const { error } = await sb.from("chat_logs").update({ resolved }).eq("id", id);
+  const { error } = await sb.from("chat_logs").update({ resolved, resolved_at: resolved ? new Date().toISOString() : null }).eq("id", id);
   if (error) throw error;
   return json({ ok: true });
 }
@@ -928,15 +1021,46 @@ async function listNotes() {
   return json({ notes: data });
 }
 
-async function reviewNote(id: number, approve: boolean) {
+async function reviewNote(id: number, approve: boolean, title?: string, content?: string) {
   const { data: n, error } = await sb.from("staff_notes").select("*").eq("id", id).single();
   if (error || !n) return json({ error: "找不到這則筆記" }, 404);
+  // 管理者可以「修改後通過」：舊版本存進 revisions，保留誰寫了什麼
+  const newTitle = typeof title === "string" && title.trim() ? title.trim().slice(0, 100) : n.title;
+  const newContent = typeof content === "string" && content.trim() ? content.trim().slice(0, 5000) : n.content;
+  const edited = newTitle !== n.title || newContent !== n.content;
+  const revisions = Array.isArray(n.revisions) ? n.revisions : [];
+  if (edited) revisions.push({ at: new Date().toISOString(), by: "admin", title: n.title, content: n.content });
   if (approve) {
-    const text = `行政經驗筆記：${n.title}\n${n.content}${n.author ? `\n（分享者：${n.author}）` : ""}`;
-    const res = await ingest(`行政經驗：${n.title}`, text, false, "staff");
+    const text = `行政經驗筆記：${newTitle}\n${newContent}${n.author ? `\n（分享者：${n.author}）` : ""}`;
+    if (edited && newTitle !== n.title) await sb.from("kb_chunks").delete().eq("source", `行政經驗：${n.title}`);
+    const res = await ingest(`行政經驗：${newTitle}`, text, false, "staff");
     if (!res.ok) return res;
   }
-  await sb.from("staff_notes").update({ status: approve ? "approved" : "rejected", reviewed_at: new Date().toISOString() }).eq("id", id);
+  await sb.from("staff_notes").update({
+    status: approve ? "approved" : "rejected", reviewed_at: new Date().toISOString(),
+    title: newTitle, content: newContent, revisions,
+  }).eq("id", id);
+  return json({ ok: true, edited });
+}
+
+// 備份用：匯出所有「公開」知識（不含向量與內部資料），給 GitHub Actions 每週存進 repo
+async function exportPublic() {
+  const rows: any[] = [];
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await sb.from("kb_chunks").select("id, source, content, image_url, created_at")
+      .eq("audience", "public").order("id").range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  const { data: syn } = await sb.from("kb_synonyms").select("*");
+  return json({ exported_at: new Date().toISOString(), chunks: rows.length, kb_chunks: rows, kb_synonyms: syn ?? [] });
+}
+
+async function saveEval(total: number, passed: number, partial: number, details: unknown) {
+  if (![total, passed, partial].every((x) => Number.isInteger(x) && x >= 0)) return json({ error: "參數不正確" }, 400);
+  const { error } = await sb.from("eval_runs").insert({ total, passed, partial, details: Array.isArray(details) ? details.slice(0, 100) : [] });
+  if (error) throw error;
   return json({ ok: true });
 }
 
@@ -945,10 +1069,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: currentCors });
   if (req.method !== "POST") return json({ error: "請用 POST" }, 405);
   try {
-    if (!GEMINI_KEY) return json({ error: "後端尚未設定 GEMINI_API_KEY" }, 500);
     const body = await req.json().catch(() => ({}));
     const action = body.action ?? "chat";
     const ip = clientIp(req);
+    // 保持喚醒：GitHub Actions 每天呼叫一次，讓 Supabase 免費專案不會因為一週沒活動被暫停
+    if (action === "health") {
+      const { count, error } = await sb.from("kb_chunks").select("id", { count: "exact", head: true });
+      return json({ ok: !error, chunks: count ?? null, time: new Date().toISOString() }, error ? 500 : 200);
+    }
+    if (action === "export_public") {
+      if (!(await allowRequest(`export:${ip}`, 4, 3600))) return json({ error: "匯出太頻繁" }, 429);
+      return await exportPublic();
+    }
+    if (!GEMINI_KEY) return json({ error: "後端尚未設定 GEMINI_API_KEY" }, 500);
     const rejectAuth = async (msg: string) => {
       if (!(await allowRequest(`authfail:${ip}`, 10, 60))) {
         return json({ error: "密碼嘗試次數過多，請稍候 1 分鐘再試。" }, 429);
@@ -960,7 +1093,9 @@ Deno.serve(async (req) => {
         if (!isStaff(body.staff_key)) return await rejectAuth("行政人員密碼錯誤");
         return await chat(body.question, body.history, "staff", ip, !!body.stream, body.image);
       }
-      return await chat(body.question, body.history, "student", ip, !!body.stream, body.image);
+      // 正確率測試（tools/eval.mjs）：帶管理密碼與 test:true，紀錄標成 test，不算進統計與 Top 10
+      const role = body.test === true && isAdmin(body.admin_key) ? "test" : "student";
+      return await chat(body.question, body.history, role, ip, !!body.stream, body.image);
     }
     if (action === "feedback") return await feedback(Number(body.id), body.helpful, ip);
     if (action === "process_queue") return await processQueue();
@@ -981,7 +1116,8 @@ Deno.serve(async (req) => {
     if (action === "pdf_prepare") return await pdfPrepare(body.url);
     if (action === "pdf_part") return await pdfPart(body.fileUri, body.source, body.url, Number(body.from), Number(body.to), body.audience);
     if (action === "notes") return await listNotes();
-    if (action === "review_note") return await reviewNote(Number(body.id), !!body.approve);
+    if (action === "review_note") return await reviewNote(Number(body.id), !!body.approve, body.title, body.content);
+    if (action === "save_eval") return await saveEval(Number(body.total), Number(body.passed), Number(body.partial ?? 0), body.details);
     if (action === "set_audience") {
       const audience = body.audience === "staff" ? "staff" : "public";
       const { error } = await sb.from("kb_chunks").update({ audience }).eq("source", body.source);
@@ -1008,6 +1144,7 @@ Deno.serve(async (req) => {
     return json({ error: "未知的 action" }, 400);
   } catch (e) {
     console.error(e);
+    logError("server", e);
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });

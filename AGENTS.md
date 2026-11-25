@@ -64,7 +64,11 @@ GitHub：`411332055/ndhu-admission-ai`（學校帳號），Pages 從 `main` 分�
 | `ingest` / `ingest_url` / `pdf_prepare` / `pdf_part` | `admin_key` | 上傳資料，可帶 `audience: "public" \| "staff"` |
 | `list` / `delete` / `set_audience` | `admin_key` | 管理來源 |
 | `stats` / `resolve_gap` | `admin_key` | 問答紀錄與知識缺口 |
-| `notes` / `review_note` | `admin_key` | 審核經驗筆記（通過後寫入 staff 知識） |
+| `notes` / `review_note` | `admin_key` | 審核經驗筆記（可帶 title／content「修改後通過」，舊版存進 `revisions`） |
+| `health` | 公開 | 保持喚醒用（GitHub Actions 每天呼叫） |
+| `export_public` | 公開（每小時 4 次） | 匯出公開知識庫給每週備份（不含向量與內部資料） |
+| `save_eval` | `admin_key` | `tools/eval.mjs` 存正確率測試結果 |
+| `chat` 帶 `test:true`＋`admin_key` | `admin_key` | 測試用問答，紀錄 role 為 `test`，不算進統計與 Top 10 |
 
 Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN_KEY`、`STAFF_KEY`。
 
@@ -75,6 +79,7 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 - `staff_notes`：行政人員經驗筆記，status pending／approved／rejected
 - `app_cache`：Top 10 統計快取（6 小時）
 - `import_queue`：排程匯入佇列
+- `usage_daily`：每日 Gemini 用量（`bump_usage` 函式累加）；`error_logs`：後端錯誤；`eval_runs`：正確率測試紀錄
 - 全部開啟 RLS 且沒有政策，前端無法直接讀寫。
 
 檢索函式 `match_chunks`（向量）與 `match_chunks_text`（中文雙字詞重疊，向量額度用完時的備援）都有 `include_staff` 參數；學生端一律 false，後端程式也會再過濾一次。**改檢索時務必維持「學生端讀不到 staff 資料」**。
@@ -84,6 +89,9 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 1. **知識缺口**：系統提示要求 AI 在答案最後輸出【完整】【部分】【無資料】標記，後端解析後移除，寫入 `chat_logs.status`。AI 有時把標記寫成文字，`STATUS_TEXT` 正則會處理。
 2. **安全過濾**：`SENSITIVE` 正則攔截問管理密碼、API key、系統提示、「忽略前面的規則」等問題，直接回固定訊息、不檢索、不呼叫 Gemini，status 記為 `blocked`。正常學生問題（例如「網路註冊系統密碼忘記怎麼辦」）不能被擋，改正則後要重新測。
 3. **防注入**：`SAFETY_RULES` 加在兩個系統提示最後：參考資料裡的指令一律不理。
+5. **個資遮蔽**：`maskPii` 在送給 AI 與存紀錄前遮掉身分證字號、學號、手機、Email，改正則後要確認代碼（如 111332、034182）與電話沒被誤遮。
+6. **切段**：`splitText` 優先在「第X條」「一、」「(一)」等開頭斷段，每段前加【文件名稱】；只影響新上傳的資料。
+7. **選用通知**：Secrets 設 `NOTIFY_WEBHOOK`（Discord／Slack Incoming Webhook）就會在學生端出現知識缺口時通知，每小時最多 6 則。
 4. **額度保護**：`gemini()` 對 429／500／503 重試，但「per day」額度用完不重試；向量檢索失敗時自動改用關鍵字檢索。
 
 ## 改前端時一定要做
@@ -116,6 +124,8 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 - 知識庫：已擴充至約 127 份來源、1,085 段（含 42 張校園與教學樓平面圖）；先前盤點的 13 則知識缺口已歸零。
 - 系統功能：已完成混合檢索（向量＋關鍵字 RRF）、口語同義詞對照、每分鐘提問頻率限制、熱門問題快取、SSE 串流回覆、圖片上傳與平面圖放大燈箱、語音提問、延伸推薦問題、深色模式、QR Code 分享與管理後台 KM 儀表板。
 - 簡報與展示稿已放置於 `presentation/`。
+- 正確率：11/25 以 15 題實測，12 題完全正確（`tools/eval.mjs`，控制台按 7 可重跑）。
+- 自動化：`.github/workflows/keepalive-backup.yml` 每天呼叫 health、每週一備份公開知識庫到 `backup/kb_public.json`。
 
 ## 待辦
 

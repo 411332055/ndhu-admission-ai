@@ -6,7 +6,7 @@
 <title>東華大學入學行政 AI 助理</title>
 <link rel="preconnect" href="https://krbrxahyebnvjnxievjb.supabase.co" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -46,8 +46,8 @@
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
 </div>
 
-<script src="config.js?v=1"></script>
-<script src="common.js?v=1"></script>
+<script src="config.js?v=2"></script>
+<script src="common.js?v=2"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
 const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, showError, idleAbort } = window.APP_UI;
@@ -124,11 +124,17 @@ function bindActions(bubble, answer, logId, turn) {
   bubble.appendChild(bar);
 }
 
+const srcPill = (s, links, extra = '') => {
+  const u = links && links[s];
+  return u && /^https:\/\//.test(u)
+    ? `<a class="src-pill src-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="打開官方原始文件">${esc(s)} ↗${extra}</a>`
+    : `<span class="src-pill">${esc(s)}${extra}</span>`;
+};
 function renderFinal(bubble, question, data, persist = true) {
   let html = md(data.answer);
   if (data.images?.length) html += renderImages(data.images);
   if (data.sources?.length) {
-    html += `<div class="sources"><span>📄 資料來源：</span>${data.sources.map(s => `<span class="src-pill">${esc(s)}</span>`).join('')}</div>`;
+    html += `<div class="sources"><span>📄 資料來源：</span>${data.sources.map(s => srcPill(s, data.links)).join('')}</div>`;
   }
   const fups = suggestFollowups(question, data.sources || [], false);
   if (fups.length) {
@@ -139,7 +145,7 @@ function renderFinal(bubble, question, data, persist = true) {
   bubble.querySelectorAll('.followup-chip').forEach(b => b.onclick = () => ask(b.textContent));
   let turn = data._turn;
   if (persist) {
-    turn = { q: question, answer: data.answer, sources: data.sources || [], images: data.images || [], log_id: data.log_id || null };
+    turn = { q: question, answer: data.answer, sources: data.sources || [], links: data.links || {}, images: data.images || [], log_id: data.log_id || null };
     savedTurns.push(turn);
     saveTurns();
   }

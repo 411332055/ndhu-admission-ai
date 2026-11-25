@@ -969,3 +969,10 @@ html[data-theme="dark"] .cat-badge.staff { background: #192842; color: #9fc0ff; 
 }
 /* 捲到最新訊息時，留出下方輸入列的高度，最後一行才不會被蓋住 */
 .msg, .msg .bubble { scroll-margin-bottom: 96px; }
+
+/* 來源連結、筆記編輯、系統狀態 */
+a.src-link { text-decoration: none; cursor: pointer; }
+a.src-link:hover { text-decoration: underline; }
+.note-title { width: 100%; margin: 8px 0 6px; font-size: 16px; font-weight: 600; }
+.note-body { width: 100%; min-height: 110px; font-size: 16px; }
+.sub-h { font-size: 1rem; margin: 16px 0 6px; }

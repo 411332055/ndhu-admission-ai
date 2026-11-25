@@ -307,3 +307,45 @@ alter table public.import_queue enable row level security;
 --   select net.http_post(url := 'https://krbrxahyebnvjnxievjb.supabase.co/functions/v1/chat',
 --     body := '{"action":"process_queue"}'::jsonb, headers := '{"content-type":"application/json"}'::jsonb,
 --     timeout_milliseconds := 150000) $$);
+
+-- ===== 11/25 維運與品質 =====
+-- 每日 Gemini 用量（日期依美西時間，跟 Gemini 額度重置時間一致）
+create table if not exists public.usage_daily (
+  day date not null,
+  kind text not null,                 -- embed / generate
+  calls integer not null default 0,
+  primary key (day, kind)
+);
+alter table public.usage_daily enable row level security;
+create or replace function public.bump_usage(p_kind text, p_n integer default 1)
+returns void language sql security definer set search_path = public as $$
+  insert into public.usage_daily(day, kind, calls)
+  values ((now() at time zone 'America/Los_Angeles')::date, p_kind, greatest(p_n, 1))
+  on conflict (day, kind) do update set calls = usage_daily.calls + excluded.calls;
+$$;
+revoke execute on function public.bump_usage(text, integer) from public, anon, authenticated;
+grant execute on function public.bump_usage(text, integer) to service_role;
+
+-- 後端錯誤紀錄（後台「系統狀態」顯示最近 20 筆）
+create table if not exists public.error_logs (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  action text,
+  message text
+);
+alter table public.error_logs enable row level security;
+
+-- 正確率測試紀錄（tools/eval.mjs 寫入）
+create table if not exists public.eval_runs (
+  id bigserial primary key,
+  created_at timestamptz not null default now(),
+  total integer not null,
+  passed integer not null,
+  partial integer not null default 0,
+  details jsonb not null default '[]'::jsonb
+);
+alter table public.eval_runs enable row level security;
+
+-- 知識缺口補齊時間、經驗筆記版本紀錄
+alter table public.chat_logs add column if not exists resolved_at timestamptz;
+alter table public.staff_notes add column if not exists revisions jsonb not null default '[]'::jsonb;
