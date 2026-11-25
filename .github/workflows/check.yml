@@ -1,0 +1,28 @@
+name: 自動檢查
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  # 程式語法、版本號、重複 id、有沒有把密碼寫進程式
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/check.js
+  # 在模擬手機上把三個頁面跑一遍（假後端，不會用到 Gemini 額度）
+  browser-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save --no-package-lock playwright@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - run: node tools/test/browser-test.mjs

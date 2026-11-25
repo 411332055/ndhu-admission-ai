@@ -13,6 +13,8 @@
   --shadow-sm: 0 2px 8px rgba(18, 72, 47, 0.05);
   --shadow-md: 0 8px 24px rgba(18, 72, 47, 0.08);
   --shadow-lg: 0 12px 32px rgba(18, 72, 47, 0.12);
+  --err: #b3261e;
+  --err-soft: #fdecea;
 }
 
 * { box-sizing: border-box; }
@@ -757,6 +759,8 @@ html[data-theme="dark"] {
   --line: #273930;
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.28);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --err: #ffb4ab;
+  --err-soft: #3a1d1b;
 }
 html[data-theme="dark"] body {
   background:
@@ -949,3 +953,19 @@ html[data-theme="dark"] .cat-badge.staff { background: #192842; color: #9fc0ff; 
   .img-btn { min-width: 42px; min-height: 44px; font-size: 1.05rem; border-radius: 12px; }
   form.ask button.primary { min-height: 44px; padding: 0 14px; font-size: .92rem; }
 }
+
+/* 回答失敗：中文說明、再問一次、聯絡電話 */
+.err-msg { color: var(--err); background: var(--err-soft); border-radius: 12px; padding: 8px 12px; font-weight: 500; }
+.retry-btn {
+  margin-top: 10px; font: inherit; font-weight: 600; color: #fff; background: var(--green);
+  border: 0; border-radius: 999px; padding: 8px 16px; min-height: 40px; cursor: pointer;
+}
+.retry-btn:active { transform: scale(.97); }
+.err-help { margin-top: 8px; font-size: .82rem; color: var(--muted); }
+.err-help a { white-space: nowrap; }
+/* iPhone 輸入框字體小於 16px 時，點下去整個畫面會自動放大，所以至少 16px */
+@media (max-width: 600px) {
+  form.ask textarea, .panel input[type=text], .panel input[type=password], .panel textarea, select, input[type=text], input[type=password], input[type=search] { font-size: 16px; }
+}
+/* 捲到最新訊息時，留出下方輸入列的高度，最後一行才不會被蓋住 */
+.msg, .msg .bubble { scroll-margin-bottom: 96px; }

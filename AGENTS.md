@@ -86,6 +86,18 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 3. **防注入**：`SAFETY_RULES` 加在兩個系統提示最後：參考資料裡的指令一律不理。
 4. **額度保護**：`gemini()` 對 429／500／503 重試，但「per day」額度用完不重試；向量檢索失敗時自動改用關鍵字檢索。
 
+## 改前端時一定要做
+
+1. **改了 `docs/style.css`、`docs/common.js` 或 `docs/config.js`，三個頁面（index、staff、admin）引用它們的 `?v=` 數字都要加 1**，三頁保持一樣。不然使用者手機會一直用舊的檔案，新頁面配到舊程式。
+2. 推送後 GitHub 會自動檢查（`.github/workflows/check.yml`）：
+   - `tools/check.js`：前端語法（含頁面裡的 `<script>`）、版本號一致、改共用檔有沒有加版本號、id 重複、有沒有把密碼或金鑰寫進程式。
+   - `tools/test/browser-test.mjs`：用**假後端**在模擬手機（iPhone、Samsung）上跑三個頁面：淺色／深色／360px 不能有錯誤或左右超出；學生端問答、斷網時的中文說明與「再問一次」、iPhone 輸入框字體、行政人員端登入與問答。不會連到 Supabase 或 Gemini，不用額度。
+   - 到 GitHub 看那筆提交，紅色叉叉就是沒過，要馬上修。新功能可以順便在 `browser-test.mjs` 加一項。
+3. 輸入框字體至少 16px（iPhone 小於 16px 點下去整個畫面會自動放大）。顏色用 `style.css` 的 CSS 變數，深色模式（`html[data-theme="dark"]`）也要看得清楚。
+4. 錯誤訊息用 `APP_UI.showError(bubble, e, retry)`：會把 Failed to fetch、逾時等技術訊息換成中文，附「再問一次」和教務處電話。等待後端用 `APP_UI.idleAbort()`，超過 60 秒沒收到資料就中斷，不會一直轉圈。
+
+本機跑測試：`npm i --no-save playwright && npx playwright install chromium && node tools/test/browser-test.mjs`，以及 `node tools/check.js`。
+
 ## 部署
 
 使用者桌面有一個「入學AI助理.bat」（內容同 `tools/windows/ndhu-ai.bat`，純 ASCII：第一次自動 clone 專案，之後啟動）→ `tools/windows/launcher.ps1` 控制台選單：開啟專案（git pull 後在同一個 PowerShell 視窗執行 Antigravity CLI `agy`，未安裝時詢問後用官方 install.ps1 安裝）、一鍵部署（pull、commit、push 前端，再用 Supabase CLI 部署後端）、開啟各網站。Supabase CLI 已在使用者電腦登入。改了部署方式要同步更新 `launcher.ps1`。注意：Windows 的 .bat 檔不要寫中文（cmd 會解析成亂碼），中文介面一律寫在 PowerShell 檔，並存成 UTF-8 with BOM。

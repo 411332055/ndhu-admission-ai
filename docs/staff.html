@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://krbrxahyebnvjnxievjb.supabase.co" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=1">
 </head>
 <body class="staff">
 <div class="app">
@@ -57,7 +57,7 @@
         <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" hidden>
         <button class="img-btn" id="pickImg" type="button" title="上傳圖片提問（也可直接 Ctrl+V 貼上截圖）">📷</button>
         <button class="img-btn voice-btn" id="voiceBtn" type="button" title="語音提問（點擊說話）">🎙️</button>
-        <textarea id="q" rows="1" placeholder="輸入問題、語音或貼上截圖…"></textarea>
+        <textarea id="q" rows="1" placeholder="輸入問題或貼上截圖…"></textarea>
         <button class="primary" id="send" type="submit">送出</button>
       </form>
     </div>
@@ -96,11 +96,11 @@
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
 </div>
 
-<script src="config.js"></script>
-<script src="common.js"></script>
+<script src="config.js?v=1"></script>
+<script src="common.js?v=1"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme } = window.APP_UI;
+const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, showError, idleAbort } = window.APP_UI;
 initTheme(document.getElementById('themeBtn'));
 const $ = id => document.getElementById(id);
 let KEY = '';
@@ -236,16 +236,17 @@ q.addEventListener('paste', e => {
   const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
   if (item) { e.preventDefault(); attachImage(item.getAsFile()); }
 });
-async function ask(question) {
+async function ask(question, retryImg) {
   if (send.disabled) return;
   question = question.trim();
-  const img = pendingImg;
+  const img = retryImg || pendingImg;
   if (!question && !img) return;
-  clearPendingImg();
+  if (!retryImg) clearPendingImg();
   const displayQ = question || '（已上傳圖片）';
   const userHtml = (img ? `<img class="chat-img" src="${img.previewUrl}" alt="上傳圖片">` : '') + (question ? `<div>${esc(question)}</div>` : '');
-  add('user', userHtml);
+  const userBubble = add('user', userHtml);
   const bubble = add('bot', '');
+  const wait = idleAbort();
   const stopAnim = startSearchAnim(bubble, { hasImage: !!img, isStaff: true });
   send.disabled = true;
   try {
@@ -254,6 +255,7 @@ async function ask(question) {
     const r = await fetch(URL_, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: wait.signal,
     });
     if (r.status === 401) { const d = await r.json().catch(() => ({})); logout(); throw new Error(d.error || '請重新登入'); }
     if (r.headers.get('content-type')?.includes('text/event-stream') && r.body) {
@@ -263,6 +265,7 @@ async function ask(question) {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        wait.poke();
         buf += dec.decode(value, { stream: true });
         const lines = buf.split('\n');
         buf = lines.pop() || '';
@@ -291,8 +294,13 @@ async function ask(question) {
     }
   } catch (e) {
     stopAnim();
-    bubble.innerHTML = `<span style="color:#b3261e">${esc(e.message)}</span>`;
+    showError(bubble, e, () => {
+      userBubble.parentElement.remove();
+      bubble.parentElement.remove();
+      ask(question, img);
+    });
   } finally {
+    wait.stop();
     stopAnim();
     send.disabled = false;
     bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });

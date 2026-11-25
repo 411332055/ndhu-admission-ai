@@ -31,6 +31,13 @@
 3. 把 `docs/config.js` 的 `FUNCTION_URL` 換成 `https://<project-ref>.supabase.co/functions/v1/chat`
 4. GitHub repo → Settings → Pages → Branch `main`、資料夾 `/docs`
 
+## 自動檢查
+
+每次推送到 GitHub 都會自動跑兩項檢查，在 GitHub 的提交旁邊看到綠色勾勾就是通過，紅色叉叉就是有東西壞了：
+
+- `tools/check.js`：程式語法、版本號、有沒有不小心把密碼或 API 金鑰寫進程式。
+- `tools/test/browser-test.mjs`：用假的後端在模擬手機上把三個頁面跑一遍（不會用到 Gemini 額度）。
+
 ## 注意
 
 - Gemini API key 只存在 Supabase Secrets，不會出現在前端。

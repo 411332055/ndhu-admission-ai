@@ -259,5 +259,32 @@ window.APP_UI = (() => {
     }
     m.hidden = false;
   }
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal };
+  // 把技術性的錯誤（Failed to fetch、逾時、伺服器回傳網頁）換成看得懂的中文
+  function friendlyError(e) {
+    const m = String((e && e.message) || e || '');
+    if (!navigator.onLine) return '目前沒有網路，連上網路後再按「再問一次」。';
+    if (e && e.name === 'AbortError') return '等太久沒有回應，可能是網路不穩或系統忙碌，請再問一次。';
+    if (e instanceof TypeError && /fetch|load failed|network/i.test(m)) return '連不上系統，可能是網路不穩，請再問一次。';
+    if (e instanceof SyntaxError) return '系統回覆的格式有問題，請再問一次。';
+    return m || '發生未知的錯誤，請再問一次。';
+  }
+  // 在回答泡泡裡顯示錯誤和「再問一次」按鈕
+  function showError(bubble, e, retry) {
+    bubble.innerHTML = `<div class="err-msg">⚠️ ${esc(friendlyError(e))}</div>`
+      + (retry ? '<button type="button" class="retry-btn">🔄 再問一次</button>' : '')
+      + '<div class="err-help">急需協助可洽東華大學教務處綜合業務組 <a href="tel:038906143">03-8906143</a></div>';
+    const b = bubble.querySelector('.retry-btn');
+    if (b) b.onclick = retry;
+  }
+  // 等待回覆的計時器：超過 ms 都沒收到新資料就中斷，避免一直轉圈
+  function idleAbort(ms = 60000) {
+    const ctl = new AbortController();
+    let t = setTimeout(() => ctl.abort(), ms);
+    return {
+      signal: ctl.signal,
+      poke(next = 45000) { clearTimeout(t); t = setTimeout(() => ctl.abort(), next); },
+      stop() { clearTimeout(t); },
+    };
+  }
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort };
 })();
