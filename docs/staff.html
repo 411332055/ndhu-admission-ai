@@ -237,6 +237,7 @@ q.addEventListener('paste', e => {
   if (item) { e.preventDefault(); attachImage(item.getAsFile()); }
 });
 async function ask(question) {
+  if (send.disabled) return;
   question = question.trim();
   const img = pendingImg;
   if (!question && !img) return;

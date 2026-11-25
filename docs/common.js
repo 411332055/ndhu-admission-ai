@@ -29,7 +29,7 @@ window.APP_UI = (() => {
     return html;
   }
   function cleanPreview(t) {
-    return String(t ?? '').replace(/\s*[【\[]\s*(完整|部分|無資料)?(?:\s*[|｜:：]\s*[\d,\s、]*)?\s*[】\]]?\s*$/, '').trim();
+    return String(t ?? '').replace(/\s*[【\[]\s*(?:完|完整|部|部分|無|無資|無資料)?(?:\s*[|｜:：]\s*[\d,\s、]*)?\s*[】\]]?\s*$/, '').trim();
   }
   function readImage(file, maxDim = 1600) {
     return new Promise((resolve, reject) => {
