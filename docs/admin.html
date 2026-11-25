@@ -331,12 +331,25 @@ async function loadStats() {
     const isGap = r.status === 'partial' || r.status === 'none' || r.helpful === false;
     const btn = !isGap || r.status === 'blocked' ? '' : r.resolved
       ? `<button class="ghost" data-undo="${r.id}">取消已補</button>`
-      : `<button class="ghost" data-res="${r.id}">已補充</button>`;
+      : `<button class="ghost" data-fix="${r.id}">🔗 貼網址補充</button> <button class="ghost" data-res="${r.id}">已補充</button>`;
     const fb = r.helpful === true ? ' <span class="tag ok">👍 有幫助</span>'
       : r.helpful === false ? ' <span class="tag">👎 沒幫到</span>' : '';
     return `<tr><td><details><summary>${r.role === 'staff' ? '<span class="tag staff">行政</span> ' : ''}${esc(r.question)}</summary><div class="ans">${esc(r.answer || '')}</div></details></td>
-      <td><span class="tag ${c}">${r.resolved && r.status !== 'blocked' ? '已補充' : t}</span>${fb}</td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`;
+      <td><span class="tag ${c}">${r.resolved && r.status !== 'blocked' ? '已補充' : t}</span>${fb}</td><td>${fmt(r.created_at)}</td><td>${btn}</td></tr>`
+      + (isGap && !r.resolved && r.status !== 'blocked' ? `<tr id="fix${r.id}" hidden><td colspan="4">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+          <input type="text" id="fixUrl${r.id}" placeholder="官方網址（PDF、網頁或圖片）" style="flex:2;min-width:220px">
+          <input type="text" id="fixName${r.id}" placeholder="來源名稱（可不填）" style="flex:1;min-width:140px">
+          <select id="fixAud${r.id}"><option value="public">公開</option><option value="staff">內部</option></select>
+          <button class="primary" data-fixgo="${r.id}">匯入並標記已補充</button>
+        </div><div class="status" id="fixSt${r.id}"></div></td></tr>` : '');
   }).join('') : '<tr><td colspan="4" class="status">目前沒有待補的缺口 🎉</td></tr>';
+  document.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => {
+    const row = $('fix' + b.dataset.fix);
+    row.hidden = !row.hidden;
+    if (!row.hidden) $('fixUrl' + b.dataset.fix).focus();
+  });
+  document.querySelectorAll('[data-fixgo]').forEach(b => b.onclick = () => fixGap(Number(b.dataset.fixgo), b));
   document.querySelectorAll('[data-res],[data-undo]').forEach(b => b.onclick = async () => {
     b.disabled = true;
     await api({ action: 'resolve_gap', id: Number(b.dataset.res || b.dataset.undo), resolved: !!b.dataset.res });
@@ -344,6 +357,32 @@ async function loadStats() {
   });
 }
 $('gapOnly').onchange = () => loadStats();
+// 知識缺口一鍵補資料：貼上官方網址 → 匯入知識庫 → 自動標記已補充
+async function fixGap(id, btn) {
+  const url = $('fixUrl' + id).value.trim();
+  if (!/^https?:\/\//i.test(url)) return status('fixSt' + id, '請貼上 http(s) 開頭的網址', 'err');
+  const source = $('fixName' + id).value.trim()
+    || decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/\.[^.]+$/, '') || url;
+  const audience = $('fixAud' + id).value;
+  btn.disabled = true;
+  status('fixSt' + id, `匯入中：${source}…（大型 PDF 可能要 1–3 分鐘）`);
+  try {
+    let r;
+    try { r = await api({ action: 'ingest_url', url, source, audience }); }
+    catch (e) {
+      const msg = String(e.message);
+      if (!/\.pdf($|\?)/i.test(url) || /下載失敗|管理密碼/.test(msg)) throw e;
+      $('aud2').value = audience;
+      r = await bigPdf(url, source, 0, 1);
+    }
+    await api({ action: 'resolve_gap', id, resolved: true });
+    status('fixSt' + id, `已匯入「${r.source}」（${r.chunks} 段）並標記已補充`, 'ok');
+    setTimeout(() => { loadStats(); loadSources(); }, 1500);
+  } catch (e) {
+    status('fixSt' + id, '匯入失敗：' + e.message, 'err');
+    btn.disabled = false;
+  }
+}
 function renderOps(d) {
   $('opsPanel').hidden = false;
   const use = d.usageToday || {}, lim = d.usageLimits || { embed: 1000, generate: 1500 };

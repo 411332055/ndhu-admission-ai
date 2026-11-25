@@ -67,6 +67,7 @@ GitHub：`411332055/ndhu-admission-ai`（學校帳號），Pages 從 `main` 分�
 | `notes` / `review_note` | `admin_key` | 審核經驗筆記（可帶 title／content「修改後通過」，舊版存進 `revisions`） |
 | `health` | 公開 | 保持喚醒用（GitHub Actions 每天呼叫） |
 | `export_public` | 公開（每小時 4 次） | 匯出公開知識庫給每週備份（不含向量與內部資料） |
+| `warm_step` | 公開（只問 `warm_queue` 裡排好的題目） | 快取預熱：pg_cron `warm-1221` 在 12/21 台灣 16:00–18:00、12/22 06:00–08:00 每 2 分鐘問一題，答案快取 7 天 |
 | `save_eval` | `admin_key` | `tools/eval.mjs` 存正確率測試結果 |
 | `chat` 帶 `test:true`＋`admin_key` | `admin_key` | 測試用問答，紀錄 role 為 `test`，不算進統計與 Top 10 |
 
@@ -127,6 +128,8 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 - 正確率：11/25 以 15 題實測，12 題完全正確（`tools/eval.mjs`，控制台按 7 可重跑）。
 - 後端 v35（11/25 從雲端部署，入口檔 import GitHub 固定 commit 的 index.ts；之後用控制台 2 部署會改回直接上傳，沒有影響）。
 - 重切舊資料：`rechunk_queue` 74 份，pg_cron `rechunk-1125` 在 11/25–27 台灣 16:00–24:00 每 2 分鐘跑一步，每天向量用量到 600 自動停；全部完成後要 `select cron.unschedule('rechunk-1125')`。
+- 快取：學生端答案快取 7 天；任何上傳／刪除都會清空快取。**12/21 下午 4 點以後到報告結束前不要上傳資料**，否則預熱的答案會被清掉（12/22 早上會自動再預熱一次）。示範要用的問題請加進 `warm_queue`。
+- 管理後台知識缺口旁有「🔗 貼網址補充」：貼官方網址即匯入並標記已補充。
 - 自動化：`.github/workflows/keepalive-backup.yml` 每天呼叫 health、每週一備份公開知識庫到 `backup/kb_public.json`。
 
 ## 待辦

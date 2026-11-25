@@ -427,7 +427,7 @@ async function chat(
   if (!allowed) return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
 
   const cached = cachedRes?.data;
-  if (cached && Date.now() - Date.parse(cached.updated_at) < 48 * 3600_000 && cached.value?.answer) {
+  if (cached && Date.now() - Date.parse(cached.updated_at) < 7 * 86400_000 && cached.value?.answer) {
     const v = cached.value;
     const { data: logRow } = await sb.from("chat_logs").insert({
       question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
@@ -1096,6 +1096,23 @@ async function rechunkStep(budget = 90, dailyCap = 600) {
   return json({ ok: true, done, used });
 }
 
+// 快取預熱：報告前由 pg_cron 定時呼叫，每次把 warm_queue 裡最久沒預熱的一題問一次，答案存進快取（7 天）。
+// 已在快取的問題直接秒回、不用 Gemini 額度；紀錄標成 test，不算進統計。只問資料庫裡排好的題目，所以不需要密碼。
+async function warmStep() {
+  const since = new Date(Date.now() - 6 * 3600_000).toISOString();
+  const { data: items } = await sb.from("warm_queue").select("id, question")
+    .or(`warmed_at.is.null,warmed_at.lt.${since}`).order("warmed_at", { ascending: true, nullsFirst: true }).limit(1);
+  const it = items?.[0];
+  if (!it) return json({ ok: true, idle: true });
+  const res = await chat(it.question, [], "test", "warm", false);
+  const body = await res.json().catch(() => ({}));
+  await sb.from("warm_queue").update({
+    warmed_at: new Date().toISOString(), ok: res.ok && !!body.answer, cached: !!body.cached,
+    error: res.ok ? null : String(body.error ?? res.status).slice(0, 300),
+  }).eq("id", it.id);
+  return json({ ok: res.ok, question: it.question, cached: !!body.cached });
+}
+
 // 備份用：匯出所有「公開」知識（不含向量與內部資料），給 GitHub Actions 每週存進 repo
 async function exportPublic() {
   const rows: any[] = [];
@@ -1153,6 +1170,7 @@ Deno.serve(async (req) => {
     if (action === "feedback") return await feedback(Number(body.id), body.helpful, ip);
     if (action === "process_queue") return await processQueue();
     if (action === "rechunk_step") return await rechunkStep();
+    if (action === "warm_step") return await warmStep();
 
     // 行政人員（管理者也可以）
     if (["staff_login", "top_questions", "submit_note"].includes(action)) {

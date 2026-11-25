@@ -360,3 +360,27 @@ create table if not exists public.rechunk_queue (
   updated_at timestamptz not null default now()
 );
 alter table public.rechunk_queue enable row level security;
+-- 快取預熱佇列：報告前由 pg_cron 呼叫 warm_step，把這些問題先問一次存進快取
+create table if not exists warm_queue (
+  id bigserial primary key,
+  question text not null unique,
+  warmed_at timestamptz,
+  ok boolean,
+  cached boolean,
+  error text,
+  created_at timestamptz default now()
+);
+alter table warm_queue enable row level security;
+insert into warm_queue (question) values
+('新生報到要準備什麼？'),('忘記上傳畢業證書怎麼辦？'),('新生註冊須知有哪些重要事項？'),
+('學雜費可以怎麼繳？'),('就學貸款怎麼申請？'),('學雜費減免與獎學金資格？'),
+('東華校園導覽平面圖'),('管理學院平面圖'),('人社一館平面圖'),('理工二館三樓平面圖'),('圖書館三樓平面圖'),
+('新生宿舍怎麼申請與進住？'),('新生體檢要注意什麼？'),('怎麼從志學火車站到東華？'),
+('學雜費繳費單什麼時候可以下載？去哪裡下載？'),('學雜費繳費單的代收類別代碼是多少？'),('什麼時候可以查詢註冊情形、列印在學證明？'),
+('研究所新生宿舍申請時間是什麼時候？'),('學雜費沒有按時繳會怎麼樣？'),('要申請延緩繳交學雜費，最晚什麼時候要提出？'),
+('就學貸款要找哪個單位？電話多少？'),('學雜費減免審核通過之後要怎麼繳費？'),('新生報到資料最晚什麼時候要上傳？'),
+('企管系經營管理組申請入學招生名額幾名？第一階段看哪些科目？'),('宿舍保證金什麼時候退？'),('新生入學活動要問哪個單位？'),
+('就學優待減免的承辦電話是多少？'),('英語能力畢業標準的檢定考試有哪些可以用？'),
+('畢業證書和身分證要什麼時候前上傳？'),('申請入學有幾個階段？'),('學雜費怎麼繳？'),('宿舍規定'),
+('學雜費一學期多少錢？可以辦減免嗎？'),('如何申請停修'),('車證怎麼申請'),('企管系畢業要修哪些學分?')
+on conflict (question) do nothing;
