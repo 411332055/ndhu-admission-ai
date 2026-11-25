@@ -922,11 +922,12 @@ html[data-theme="dark"] .msg.user .bubble {
 html[data-theme="dark"] .panel input[type=text],
 html[data-theme="dark"] .panel input[type=password],
 html[data-theme="dark"] .panel textarea,
-html[data-theme="dark"] select.aud,
-html[data-theme="dark"] form.ask textarea {
+html[data-theme="dark"] select.aud {
   background: #121b17;
   color: var(--text);
 }
+html[data-theme="dark"] .chk-tabs { background: rgba(255, 255, 255, 0.07); }
+html[data-theme="dark"] .chk-tabs button.on { background: #222e28; color: var(--green-dark); }
 html[data-theme="dark"] details .ans,
 html[data-theme="dark"] .note,
 html[data-theme="dark"] .ans-img-card,
@@ -1128,7 +1129,7 @@ html[data-theme="dark"] .cat-badge.staff { background: #192842; color: #9fc0ff; 
   .welcome h2 { font-size: 1.46rem; }
   .bubble { padding: 16px 20px; }
   .panel { padding: 22px 24px; }
-  form.ask { padding: 16px 20px 18px; }
+  form.ask { padding: 7px 10px; }
 }
 
 /* ── 手機版精修（含 360px 窄螢幕與 iPhone 安全區） ── */

@@ -651,5 +651,42 @@ window.APP_UI = (() => {
     render();
     m.hidden = false;
   }
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup, shareAnswer, openContactsModal, openScheduleModal, speakAnswer, copyStudentReply, openChecklistModal };
+  // 共用來源標籤：有 https 原始網址就做成可點擊連結
+  function srcPill(s, links, extra = '') {
+    const u = links && links[s];
+    return u && /^https:\/\//.test(u)
+      ? `<a class="src-pill src-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="打開官方原始文件">${esc(s)} ↗${extra}</a>`
+      : `<span class="src-pill">${esc(s)}${extra}</span>`;
+  }
+  // 共用 SSE 串流讀取器（學生端與行政端共用，消除重複程式）
+  async function readSse(r, wait, onDelta) {
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', acc = '', doneData = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      wait?.poke();
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const ev = JSON.parse(line.slice(5).trim());
+        if (ev.type === 'delta') {
+          acc += ev.text;
+          if (onDelta) onDelta(acc);
+        } else if (ev.type === 'done') {
+          doneData = ev;
+        } else if (ev.type === 'error') {
+          throw new Error(ev.error);
+        }
+      }
+    }
+    if (!doneData) throw new Error('連線中斷，請再試一次');
+    return doneData;
+  }
+  // 離開頁面時自動停止語音朗讀
+  window.addEventListener('pagehide', () => { try { window.speechSynthesis?.cancel(); } catch {} });
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup, shareAnswer, openContactsModal, openScheduleModal, speakAnswer, copyStudentReply, openChecklistModal, srcPill, readSse };
 })();

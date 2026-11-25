@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://krbrxahyebnvjnxievjb.supabase.co" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body class="staff">
 <div class="app">
@@ -101,11 +101,11 @@
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
 </div>
 
-<script src="config.js?v=10"></script>
-<script src="common.js?v=10"></script>
+<script src="config.js?v=11"></script>
+<script src="common.js?v=11"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, showError, idleAbort, warmup, speakAnswer, copyStudentReply } = window.APP_UI;
+const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, showError, idleAbort, warmup, speakAnswer, copyStudentReply, srcPill, readSse } = window.APP_UI;
 initTheme(document.getElementById('themeBtn'));
 warmup(URL_);
 const $ = id => document.getElementById(id);
@@ -174,12 +174,6 @@ function add(role, html) {
   row.scrollIntoView({ behavior: 'smooth', block: 'end' });
   return row.firstChild;
 }
-const srcPill = (s, links, extra = '') => {
-  const u = links && links[s];
-  return u && /^https:\/\//.test(u)
-    ? `<a class="src-pill src-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="打開官方原始文件">${esc(s)} ↗${extra}</a>`
-    : `<span class="src-pill">${esc(s)}${extra}</span>`;
-};
 function renderFinal(bubble, question, d, persist = true) {
   let html = md(d.answer);
   if (d.images?.length) html += renderImages(d.images);
@@ -256,8 +250,9 @@ q.addEventListener('paste', e => {
   const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'));
   if (item) { e.preventDefault(); attachImage(item.getAsFile()); }
 });
+let activeStop = null;
 async function ask(question, retryImg) {
-  if (send.disabled) return;
+  if (activeStop) return;
   question = question.trim();
   const img = retryImg || pendingImg;
   if (!question && !img) return;
@@ -268,7 +263,12 @@ async function ask(question, retryImg) {
   const bubble = add('bot', '');
   const wait = idleAbort();
   const stopAnim = startSearchAnim(bubble, { hasImage: !!img, isStaff: true });
-  send.disabled = true;
+  let userStopped = false, acc = '';
+  activeStop = () => { userStopped = true; wait.abort(); };
+  send.textContent = '⏹ 停止';
+  send.classList.add('stop-btn');
+  send.type = 'button';
+  send.onclick = () => activeStop?.();
   try {
     const payload = { action: 'chat', question, history: history.slice(-4), staff_key: KEY, stream: true };
     if (img) payload.image = { mimeType: img.mimeType, data: img.data };
@@ -279,31 +279,11 @@ async function ask(question, retryImg) {
     });
     if (r.status === 401) { const d = await r.json().catch(() => ({})); logout(); throw new Error(d.error || '請重新登入'); }
     if (r.headers.get('content-type')?.includes('text/event-stream') && r.body) {
-      const reader = r.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '', acc = '', doneData = null;
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        wait.poke();
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue;
-          const ev = JSON.parse(line.slice(5).trim());
-          if (ev.type === 'delta') {
-            acc += ev.text;
-            const preview = cleanPreview(acc);
-            if (preview) { stopAnim(); bubble.innerHTML = md(preview); bubble.scrollIntoView({ block: 'end' }); }
-          } else if (ev.type === 'done') {
-            doneData = ev;
-          } else if (ev.type === 'error') {
-            throw new Error(ev.error);
-          }
-        }
-      }
-      if (!doneData) throw new Error('連線中斷，請再試一次');
+      const doneData = await readSse(r, wait, text => {
+        acc = text;
+        const preview = cleanPreview(acc);
+        if (preview) { stopAnim(); bubble.innerHTML = md(preview); bubble.scrollIntoView({ block: 'end' }); }
+      });
       stopAnim();
       renderFinal(bubble, displayQ, doneData);
     } else {
@@ -314,15 +294,24 @@ async function ask(question, retryImg) {
     }
   } catch (e) {
     stopAnim();
-    showError(bubble, e, () => {
-      userBubble.parentElement.remove();
-      bubble.parentElement.remove();
-      ask(question, img);
-    });
+    if (userStopped) {
+      const preview = cleanPreview(acc);
+      bubble.innerHTML = (preview ? md(preview) : '') + '<div class="stopped-note">⏹ 已停止這次回答</div>';
+    } else {
+      showError(bubble, e, () => {
+        userBubble.parentElement.remove();
+        bubble.parentElement.remove();
+        ask(question, img);
+      });
+    }
   } finally {
     wait.stop();
     stopAnim();
-    send.disabled = false;
+    activeStop = null;
+    send.textContent = '送出';
+    send.classList.remove('stop-btn');
+    send.type = 'submit';
+    send.onclick = null;
     bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 }
