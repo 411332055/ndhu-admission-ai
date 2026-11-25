@@ -137,7 +137,7 @@ function Read-Password([string]$prompt = '請輸入管理密碼') {
 }
 
 function Invoke-Eval {
-  Show-Step '正確率測試：15 題，約 3 分鐘（每分鐘最多 8 題，會自動放慢）'
+  Show-Step '正確率測試：30 題，約 5 分鐘（每分鐘最多 8 題，會自動放慢）'
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host '需要先安裝 Node.js（選 LTS 版本）。' -ForegroundColor Yellow
     Start-Process 'https://nodejs.org'
@@ -179,7 +179,7 @@ while ($true) {
   Write-Host '  4. 開啟行政人員端'
   Write-Host '  5. 開啟管理後台'
   Write-Host '  6. 開啟 Supabase 控制台'
-  Write-Host '  7. 跑正確率測試（15 題）'
+  Write-Host '  7. 跑正確率測試（30 題，約 5 分鐘）'
   Write-Host '  8. 一鍵匯入 115 官方知識包（10 份）'
   Write-Host ''
   Write-Host '  0. 離開'
