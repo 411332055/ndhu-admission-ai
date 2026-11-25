@@ -372,7 +372,7 @@ window.APP_UI = (() => {
     const b = bubble.querySelector('.retry-btn');
     if (b) b.onclick = retry;
   }
-  // 等待回覆的計時器：超過 ms 都沒收到新資料就中斷，避免一直轉圈
+  // 等待回覆的計時器：超過 ms 都沒收到新資料就中斷，避免一直轉圈；也支援手動停止
   function idleAbort(ms = 60000) {
     const ctl = new AbortController();
     let t = setTimeout(() => ctl.abort(), ms);
@@ -380,7 +380,109 @@ window.APP_UI = (() => {
       signal: ctl.signal,
       poke(next = 45000) { clearTimeout(t); t = setTimeout(() => ctl.abort(), next); },
       stop() { clearTimeout(t); },
+      abort() { clearTimeout(t); ctl.abort(); },
     };
+  }
+  // iOS / Android 原生分享（可一鍵分享到 LINE），電腦端自動改為複製
+  async function shareAnswer(question, answer, btn) {
+    const url = 'https://411332055.github.io/ndhu-admission-ai/';
+    const text = (question ? `Q：${question}\n\n` : '') + `${answer}\n\n— 東華大學入學行政 AI 助理`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: '東華大學入學行政 AI 助理', text, url });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      if (btn) {
+        const old = btn.textContent;
+        btn.textContent = '✅ 已複製分享';
+        setTimeout(() => { btn.textContent = old; }, 1600);
+      }
+    } catch {}
+  }
+  // 常用處室一鍵撥號卡片（iOS 抽屜風格，不耗 AI 額度）
+  function openContactsModal() {
+    let m = document.getElementById('ndhu-contacts-modal');
+    if (!m) {
+      const items = [
+        ['教務處 綜合業務組', '招生管道、入學總窗口', '03-8906143'],
+        ['教務處 註冊組', '新生報到、學籍、在學證明', '03-8906112'],
+        ['教務處 課務組', '新生選課、學分抵免', '03-8906122'],
+        ['學務處 生活輔導組（學貸）', '就學貸款辦理與對保', '03-8906221'],
+        ['學務處 生活輔導組（減免）', '學雜費減免、弱勢助學', '03-8906218'],
+        ['學務處 課外活動組', '新生入學活動、學生社團', '03-8906232'],
+      ];
+      m = document.createElement('div');
+      m.id = 'ndhu-contacts-modal';
+      m.className = 'lightbox';
+      m.innerHTML = `
+        <div class="sheet-card">
+          <div class="sheet-head">
+            <h3>📞 東華常用處室電話</h3>
+            <button type="button" class="lightbox-close" aria-label="關閉">✕</button>
+          </div>
+          <p class="sheet-sub">點擊號碼即可直接撥號（上班時間週一至週五 08:30–17:00）</p>
+          <div class="sheet-list">${items.map(([name, desc, tel]) =>
+            `<div class="sheet-row">
+              <div class="sheet-info"><b>${esc(name)}</b><span>${esc(desc)}</span></div>
+              <a class="tel-pill" href="tel:${tel.replace(/-/g, '')}">📞 ${esc(tel)}</a>
+            </div>`).join('')}</div>
+        </div>`;
+      m.addEventListener('click', e => { if (e.target === m) m.hidden = true; });
+      m.querySelector('.lightbox-close').onclick = () => { m.hidden = true; };
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) m.hidden = true; });
+      document.body.appendChild(m);
+    }
+    m.hidden = false;
+  }
+  // 115 學年度新生重要日程快速總覽（點擊任一項直接問 AI 詳細規定）
+  function openScheduleModal(onAsk) {
+    let m = document.getElementById('ndhu-schedule-modal');
+    if (!m) {
+      const events = [
+        ['8/01 – 9/07', '學雜費減免、兵役緩徵申請', '學雜費減免與獎學金資格？'],
+        ['8/03 – 8/16', '研究所新生宿舍申請', '研究所新生宿舍申請時間是什麼時候？'],
+        ['8/17 – 9/07', '下載繳費單、就學貸款申請', '學雜費繳費單什麼時候可以下載？去哪裡下載？'],
+        ['8/17 – 9/18', '新生及轉學生學分抵免申請', '新生及轉學生抵免學分怎麼申請？'],
+        ['8/27 截止', '新生報到資料上傳截止', '新生報到資料最晚什麼時候要上傳？'],
+        ['9/01', '住校新生入宿報到', '新生宿舍怎麼申請與進住？'],
+        ['9/02 – 9/05', '新生入學活動、網路選課（9/2–9/4）', '新生入學活動要問哪個單位？'],
+        ['9/07', '註冊日（查註冊情形、列印在學證明）', '什麼時候可以查詢註冊情形、列印在學證明？'],
+      ];
+      m = document.createElement('div');
+      m.id = 'ndhu-schedule-modal';
+      m.className = 'lightbox';
+      m.innerHTML = `
+        <div class="sheet-card">
+          <div class="sheet-head">
+            <h3>📅 115-1 新生重要日程</h3>
+            <button type="button" class="lightbox-close" aria-label="關閉">✕</button>
+          </div>
+          <p class="sheet-sub">點任一項目可直接問 AI 詳細規定；正式日程以學校行事曆為準</p>
+          <div class="sheet-list">${events.map(([date, title, q]) =>
+            `<button type="button" class="sheet-row sheet-btn" data-q="${esc(q)}">
+              <span class="date-pill">${esc(date)}</span>
+              <span class="sheet-info"><b>${esc(title)}</b></span>
+              <span class="sheet-arrow">›</span>
+            </button>`).join('')}</div>
+          <div class="sheet-foot">
+            <a href="https://sys.ndhu.edu.tw/AA/calendar/?yd=115" target="_blank" rel="noopener noreferrer">開啟東華 115 學年度完整校務行事曆 ↗</a>
+          </div>
+        </div>`;
+      m.addEventListener('click', e => { if (e.target === m) m.hidden = true; });
+      m.querySelector('.lightbox-close').onclick = () => { m.hidden = true; };
+      m.querySelectorAll('.sheet-btn').forEach(b => b.onclick = () => {
+        m.hidden = true;
+        if (onAsk) onAsk(b.dataset.q);
+      });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) m.hidden = true; });
+      document.body.appendChild(m);
+    }
+    m.hidden = false;
   }
   // 開啟網頁時在背景先喚醒後端（消滅冷啟動等待；同分頁 3 分鐘內只喚醒一次）
   function warmup(url) {
@@ -414,5 +516,5 @@ window.APP_UI = (() => {
     if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', mount, { once: true });
   })();
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup };
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup, shareAnswer, openContactsModal, openScheduleModal };
 })();

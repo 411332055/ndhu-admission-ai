@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 </head>
@@ -129,8 +129,8 @@
   </main>
 </div>
 
-<script src="config.js?v=8"></script>
-<script src="common.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="common.js?v=9"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
 const $ = id => document.getElementById(id);
@@ -390,7 +390,8 @@ async function fixGap(id, btn) {
 function renderOps(d) {
   $('opsPanel').hidden = false;
   const use = d.usageToday || {}, lim = d.usageLimits || { embed: 1000, generate: 1500 };
-  status('opsSummary', `今天（美西時間，Gemini 額度在台灣時間下午 3–4 點重置）已用：生成 ${use.generate || 0} 次、向量 ${use.embed || 0} 次。免費上限約生成 ${lim.generate}、向量 ${lim.embed}。`);
+  const warmTxt = d.warm ? `｜🔥 報告快取預熱：${d.warm.ready} / ${d.warm.total} 題已就緒` : '';
+  status('opsSummary', `今天（美西時間，Gemini 額度在台灣時間下午 3–4 點重置）已用：生成 ${use.generate || 0} 次、向量 ${use.embed || 0} 次（免費上限約生成 ${lim.generate}、向量 ${lim.embed}）${warmTxt}。`);
   const runs = d.evalRuns || [];
   $('evalList').innerHTML = runs.length ? runs.map(r => `<tr><td>${fmt(r.created_at)}</td><td>${r.passed}</td><td>${r.partial}</td><td>${r.total}</td></tr>`).join('')
     : '<tr><td colspan="4" class="status">還沒有測試紀錄</td></tr>';

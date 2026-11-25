@@ -1023,22 +1023,26 @@ async function stats() {
   return json({ total, unanswered: gaps.length, blocked, helpfulYes, helpfulNo, recent: data, gaps, ...ops });
 }
 
-// 維運摘要：今天的 Gemini 用量、最近錯誤、正確率測試紀錄、缺口補齊速度
+// 維運摘要：今天的 Gemini 用量、最近錯誤、正確率測試紀錄、缺口補齊速度、報告預熱進度
 async function opsSummary() {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
-  const [u, e, ev, rs] = await Promise.all([
+  const [u, e, ev, rs, w] = await Promise.all([
     sb.from("usage_daily").select("day, kind, calls").gte("day", new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)).order("day", { ascending: false }),
     sb.from("error_logs").select("created_at, action, message").order("id", { ascending: false }).limit(20),
     sb.from("eval_runs").select("id, created_at, total, passed, partial").order("id", { ascending: false }).limit(10),
     sb.from("chat_logs").select("created_at, resolved_at").not("resolved_at", "is", null).order("resolved_at", { ascending: false }).limit(100),
+    sb.from("warm_queue").select("ok, warmed_at"),
   ]);
   const usageToday: Record<string, number> = {};
   for (const r of u.data ?? []) if (r.day === today) usageToday[r.kind] = r.calls;
   const days = (rs.data ?? []).map((r: any) => (Date.parse(r.resolved_at) - Date.parse(r.created_at)) / 86400_000).filter((d: number) => d >= 0);
   const avgResolveDays = days.length ? Math.round(days.reduce((a: number, b: number) => a + b, 0) / days.length * 10) / 10 : null;
+  const warmRows = w.data ?? [];
+  const warmReady = warmRows.filter((r: any) => r.ok && r.warmed_at && Date.now() - Date.parse(r.warmed_at) < 7 * 86400_000).length;
   return {
     usageToday, usageWeek: u.data ?? [], usageLimits: { embed: 1000, generate: 1500 },
     errors: e.data ?? [], evalRuns: ev.data ?? [], avgResolveDays, resolvedCount: days.length,
+    warm: { total: warmRows.length, ready: warmReady },
   };
 }
 
