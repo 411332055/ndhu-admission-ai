@@ -35,6 +35,7 @@ function fakeBackend(route) {
           { type: "done", answer: "新生報到要準備：\n- 身分證\n- 畢業證書影本", sources: ["115 新生註冊須知"], images: [], log_id: 1 },
         ]),
       });
+    case "health":
     case "feedback":
     case "staff_login":
       return json({ ok: true });

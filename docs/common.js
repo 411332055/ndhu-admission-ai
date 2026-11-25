@@ -286,5 +286,21 @@ window.APP_UI = (() => {
       stop() { clearTimeout(t); },
     };
   }
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort };
+  // 開啟網頁時在背景先喚醒後端（消滅冷啟動等待；同分頁 3 分鐘內只喚醒一次）
+  function warmup(url) {
+    if (!url || !navigator.onLine) return;
+    try {
+      const k = 'ndhu_warmup_at';
+      const last = Number(sessionStorage.getItem(k) || 0);
+      if (Date.now() - last < 180000) return;
+      sessionStorage.setItem(k, String(Date.now()));
+    } catch {}
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'health' }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup };
 })();

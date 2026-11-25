@@ -284,7 +284,110 @@ function normQ(q: string) {
   return q.toLowerCase().replace(/[\s？?。！!，,、：:；;「」『』（）()]+/g, "").slice(0, 120);
 }
 
+// 口語同義詞表常駐記憶體（10 分鐘更新一次），每次提問省下一次資料庫往返
+const SYN_TTL = 10 * 60_000;
+let synCache: { rows: { term: string; expands: string }[]; at: number } | null = null;
+async function expandQuery(q: string): Promise<string> {
+  try {
+    const now = Date.now();
+    if (!synCache || now - synCache.at > SYN_TTL) {
+      const { data } = await sb.from("kb_synonyms").select("term, expands");
+      if (Array.isArray(data)) synCache = { rows: data, at: now };
+    }
+    if (!synCache?.rows?.length) return q;
+    const lowerQ = q.toLowerCase();
+    const extra = synCache.rows
+      .filter((r) => r.term && lowerQ.includes(r.term.toLowerCase()))
+      .map((r) => r.expands)
+      .join(" ")
+      .trim();
+    return extra ? `${q} ${extra.slice(0, 120)}` : q;
+  } catch {
+    return q;
+  }
+}
+
+// 語意快取：把公開問答快取的向量留在記憶體（3 分鐘刷新），相似問法也能直接秒回、省 Gemini 生成額度
+const SEM_TTL = 3 * 60_000;
+const SEM_SIM = 0.965;
+const ENTITY_TERMS = [
+  "大學部", "研究所", "碩士", "博士", "轉學", "僑生", "外籍", "原住民",
+  "減免", "貸款", "學貸", "獎學金", "宿舍", "體檢", "健檢", "兵役",
+  "停修", "休學", "退學", "轉系", "雙主修", "輔系",
+  "一館", "二館", "三館", "一樓", "二樓", "三樓", "四樓", "五樓",
+  "管院", "管理學院", "人社", "理工", "花師", "教育學院", "原民", "環境", "藝術", "圖書館", "行政大樓",
+];
+type SemEntry = { key: string; q: string; vec: number[]; value: any; updated_at: string };
+let semCache: { items: SemEntry[]; at: number } | null = null;
+
+function roundVec(v: number[] | null | undefined) {
+  return Array.isArray(v) && v.length === DIM ? v.map((x) => Math.round(x * 10000) / 10000) : undefined;
+}
+function dot(a: number[], b: number[]) {
+  let s = 0;
+  for (let i = 0; i < a.length && i < b.length; i++) s += a[i] * b[i];
+  return s;
+}
+function sameKeyEntities(q1: string, q2: string) {
+  if (!q1 || !q2) return false;
+  const nums1 = (q1.match(/\d+/g) ?? []).join(",");
+  const nums2 = (q2.match(/\d+/g) ?? []).join(",");
+  if (nums1 !== nums2) return false;
+  for (const t of ENTITY_TERMS) {
+    if (q1.includes(t) !== q2.includes(t)) return false;
+  }
+  return true;
+}
+async function loadSemCache(): Promise<SemEntry[]> {
+  const now = Date.now();
+  if (semCache && now - semCache.at < SEM_TTL) return semCache.items;
+  try {
+    const since = new Date(now - 7 * 86400_000).toISOString();
+    const { data } = await sb.from("app_cache")
+      .select("key, value, updated_at")
+      .like("key", "qa:public:%")
+      .gte("updated_at", since)
+      .order("updated_at", { ascending: false })
+      .limit(200);
+    const items: SemEntry[] = [];
+    for (const r of data ?? []) {
+      const v = r.value;
+      if (v?.answer && Array.isArray(v?.vec) && v.vec.length === DIM && typeof v?.q === "string") {
+        items.push({ key: r.key, q: v.q, vec: v.vec, value: v, updated_at: r.updated_at });
+      }
+    }
+    semCache = { items, at: now };
+    return items;
+  } catch {
+    return semCache?.items ?? [];
+  }
+}
+async function findSemanticCache(question: string, qv: number[]) {
+  const items = await loadSemCache();
+  let best: { entry: SemEntry; score: number } | null = null;
+  for (const it of items) {
+    const score = dot(qv, it.vec);
+    if (score >= SEM_SIM && sameKeyEntities(question, it.q) && (!best || score > best.score)) {
+      best = { entry: it, score };
+    }
+  }
+  return best?.entry.value ?? null;
+}
+async function saveQaCache(key: string, value: Record<string, unknown>) {
+  const updated_at = new Date().toISOString();
+  try {
+    await sb.from("app_cache").upsert({ key, value, updated_at });
+    if (semCache && Array.isArray(value.vec) && typeof value.q === "string") {
+      semCache.items = [
+        { key, q: value.q, vec: value.vec as number[], value, updated_at },
+        ...semCache.items.filter((x) => x.key !== key),
+      ].slice(0, 200);
+    }
+  } catch {}
+}
+
 async function clearQaCache() {
+  semCache = null;
   try { await sb.from("app_cache").delete().like("key", "qa:%"); } catch {}
 }
 
@@ -418,43 +521,62 @@ async function chat(
     ? `${String(prevUser.content).trim().slice(0, 60)} ${question}`
     : question;
 
-  // 平行檢查限流、熱門問題快取與口語同義詞展開（少一次資料庫往返，直接提速）
-  const [allowed, cachedRes, expandedRes] = await Promise.all([
+  // 平行檢查限流、熱門問題快取與口語同義詞展開（同義詞表常駐記憶體，少一次資料庫往返）
+  const [allowed, cachedRes, searchQuery] = await Promise.all([
     allowRequest(`chat:${role}:${ip}`, staff ? 15 : 8, 60),
     cacheKey ? sb.from("app_cache").select("value, updated_at").eq("key", cacheKey).maybeSingle() : Promise.resolve({ data: null }),
-    sb.rpc("expand_query", { q: baseQuery }).then((r) => r.data).catch(() => null),
+    expandQuery(baseQuery),
   ]);
   if (!allowed) return json({ error: "提問太頻繁了，請稍候 1 分鐘再試。" }, 429);
 
   const cached = cachedRes?.data;
   if (cached && Date.now() - Date.parse(cached.updated_at) < 7 * 86400_000 && cached.value?.answer) {
     const v = cached.value;
-    const { data: logRow } = await sb.from("chat_logs").insert({
-      question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
-    }).select("id").single();
-    const links = v.links ?? await sourceLinks(v.sources ?? []);
+    const [{ data: logRow }, links] = await Promise.all([
+      sb.from("chat_logs").insert({
+        question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
+      }).select("id").single(),
+      v.links ? Promise.resolve(v.links) : sourceLinks(v.sources ?? []),
+    ]);
     return json({ answer: v.answer, sources: v.sources ?? [], links, images: v.images ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
   }
 
-  const searchQuery = typeof expandedRes === "string" && expandedRes.trim() ? expandedRes.trim() : baseQuery;
-
   // 混合檢索平行跑：向量（語意）與關鍵字（標題＋內文＋英數代碼）同時執行，再用 RRF 融合重排
+  let qv: number[] | null = null;
   const vecTask = (async () => {
     try {
-      const [qv] = await embed([searchQuery], "RETRIEVAL_QUERY");
+      const [v] = await embed([searchQuery], "RETRIEVAL_QUERY");
+      qv = v;
+      if (cacheKey) {
+        const semHit = await findSemanticCache(question, v);
+        if (semHit) return { semHit, rows: [] as any[] };
+      }
       const { data, error } = await sb.rpc("match_chunks", {
-        query_embedding: qv, match_count: CANDIDATE_K, min_similarity: MIN_SIM, include_staff: staff,
+        query_embedding: v, match_count: CANDIDATE_K, min_similarity: MIN_SIM, include_staff: staff,
       });
       if (error) throw error;
-      return data ?? [];
+      return { semHit: null as any, rows: data ?? [] };
     } catch (e) {
       console.error("vector search failed, keyword only:", e);
-      return [];
+      return { semHit: null as any, rows: [] as any[] };
     }
   })();
   const kwTask = sb.rpc("match_chunks_text", { q: searchQuery, match_count: CANDIDATE_K, include_staff: staff }).then((r) => r.data ?? []);
-  const [vecHits, kwHits] = await Promise.all([vecTask, kwTask]);
-  const hits = mergeAndRank(vecHits, kwHits, staff);
+  const [vecRes, kwHits] = await Promise.all([vecTask, kwTask]);
+
+  // 語意快取命中：相似問法直接回傳快取答案，省去 Gemini 生成等待與額度
+  if (vecRes.semHit) {
+    const v = vecRes.semHit;
+    const [{ data: logRow }, links] = await Promise.all([
+      sb.from("chat_logs").insert({
+        question, answer: v.answer, sources: v.sources ?? [], top_score: v.top_score ?? null, answered: true, status: "full", role,
+      }).select("id").single(),
+      v.links ? Promise.resolve(v.links) : sourceLinks(v.sources ?? []),
+    ]);
+    return json({ answer: v.answer, sources: v.sources ?? [], links, images: v.images ?? [], internal: [], top_score: v.top_score ?? null, log_id: logRow?.id ?? null, cached: true });
+  }
+
+  const hits = mergeAndRank(vecRes.rows, kwHits, staff);
 
   const top = hits?.[0]?.similarity ?? null;
 
@@ -468,17 +590,16 @@ async function chat(
     if (mapPick.images.length) {
       const names = mapPick.images.map((x) => `「${x.source}」`).join("、");
       const answer = `已為你找到 ${names}！請直接點選下方平面圖放大檢視教室與空間位置。`;
-      const [{ data: logRow }] = await Promise.all([
+      const [{ data: logRow }, links] = await Promise.all([
         sb.from("chat_logs").insert({
           question: logQuestion, answer, sources: mapPick.sources, top_score: top, answered: true, status: "full", role,
         }).select("id").single(),
-        cacheKey ? sb.from("app_cache").upsert({
-          key: cacheKey,
-          value: { answer, sources: mapPick.sources, images: mapPick.images, top_score: top },
-          updated_at: new Date().toISOString(),
-        }) : Promise.resolve(),
+        sourceLinks(mapPick.sources),
       ]);
-      return json({ answer, sources: mapPick.sources, images: mapPick.images, internal: [], top_score: top, log_id: logRow?.id ?? null });
+      if (cacheKey) {
+        await saveQaCache(cacheKey, { q: question, answer, sources: mapPick.sources, links, images: mapPick.images, top_score: top, vec: roundVec(qv) });
+      }
+      return json({ answer, sources: mapPick.sources, links, images: mapPick.images, internal: [], top_score: top, log_id: logRow?.id ?? null });
     }
   }
 
@@ -566,19 +687,18 @@ async function chat(
           const { answer, status, usedIndices } = cleanAnswer(raw);
           const { sources: finalSources, usedHits, images: finalImages } = pickSources(hits, status, usedIndices);
           const finalInternal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
-          const [{ data: logRow }] = await Promise.all([
+          // 存紀錄與查來源連結平行執行，縮短串流收尾等待時間
+          const [{ data: logRow }, finalLinks] = await Promise.all([
             sb.from("chat_logs").insert({
               question: logQuestion, answer, sources: finalSources, top_score: top, answered: status === "full", status, role,
             }).select("id").single(),
-            cacheKey && status === "full" ? sb.from("app_cache").upsert({
-              key: cacheKey,
-              value: { answer, sources: finalSources, images: finalImages, top_score: top },
-              updated_at: new Date().toISOString(),
-            }) : Promise.resolve(),
+            sourceLinks(finalSources),
           ]);
-          const finalLinks = await sourceLinks(finalSources);
-          if (role === "student" && status !== "full") notifyGap(logQuestion, status, answer);
           send({ type: "done", answer, sources: finalSources, links: finalLinks, images: finalImages, internal: finalInternal, top_score: top, log_id: logRow?.id ?? null });
+          if (cacheKey && status === "full") {
+            await saveQaCache(cacheKey, { q: question, answer, sources: finalSources, links: finalLinks, images: finalImages, top_score: top, vec: roundVec(qv) });
+          }
+          if (role === "student" && status !== "full") notifyGap(logQuestion, status, answer);
         } catch (e) {
           console.error("stream read error:", e);
           logError("chat_stream_read", e);
@@ -611,18 +731,16 @@ async function chat(
   const { sources, usedHits, images } = pickSources(hits, status, usedIndices);
   const internal = staff ? [...new Set(usedHits.filter((h: any) => h.audience === "staff").map((h: any) => h.source))] : [];
 
-  const { data: logRow } = await sb.from("chat_logs").insert({
-    question: logQuestion, answer, sources, top_score: top, answered: status === "full", status, role,
-  }).select("id").single();
+  const [{ data: logRow }, links] = await Promise.all([
+    sb.from("chat_logs").insert({
+      question: logQuestion, answer, sources, top_score: top, answered: status === "full", status, role,
+    }).select("id").single(),
+    sourceLinks(sources),
+  ]);
   if (cacheKey && status === "full") {
-    await sb.from("app_cache").upsert({
-      key: cacheKey,
-      value: { answer, sources, images, top_score: top },
-      updated_at: new Date().toISOString(),
-    });
+    await saveQaCache(cacheKey, { q: question, answer, sources, links, images, top_score: top, vec: roundVec(qv) });
   }
   if (role === "student" && status !== "full") notifyGap(logQuestion, status, answer);
-  const links = await sourceLinks(sources);
   return json({ answer, sources, links, images, internal, top_score: top, log_id: logRow?.id ?? null });
 }
 
@@ -1002,6 +1120,7 @@ async function saveSynonym(term: string, expands: string) {
   if (!term || !expands) return json({ error: "請填寫口語詞與對應官方詞" }, 400);
   const { error } = await sb.from("kb_synonyms").upsert({ term, expands });
   if (error) throw error;
+  synCache = null;
   await clearQaCache();
   return json({ ok: true });
 }
@@ -1011,6 +1130,7 @@ async function deleteSynonym(term: string) {
   if (!term) return json({ error: "缺少口語詞" }, 400);
   const { error } = await sb.from("kb_synonyms").delete().eq("term", term);
   if (error) throw error;
+  synCache = null;
   await clearQaCache();
   return json({ ok: true });
 }
