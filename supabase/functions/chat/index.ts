@@ -145,7 +145,7 @@ async function sourceLinks(names: string[]) {
     const { data } = await sb.from("kb_chunks").select("source, content").in("source", list).ilike("content", "%原始網址%").limit(40);
     for (const r of data ?? []) {
       if (out[r.source]) continue;
-      const m = String(r.content).match(/原始網址[:：]\s*(https?:\/\/[^\s，。、）)】"]+)/);
+      const m = String(r.content).match(/原始網址[:：]\s*(https?:\/\/[^\s,，。、）)】"]+)/);
       if (m) out[r.source] = m[1];
     }
   } catch (e) { console.error("sourceLinks failed:", e); }
