@@ -267,7 +267,8 @@ insert into public.kb_synonyms (term, expands) values
   ('原民院', '原住民民族學院 平面圖'),
   ('環院', '環境暨海洋學院 環境學院 平面圖'),
   ('藝院', '藝術學院 平面圖'),
-  ('圖書館', '圖書資訊處 圖資大樓 樓層平面圖')
+  ('圖書館', '圖書資訊處 圖資大樓 樓層平面圖'),
+  ('電話', '分機 聯絡電話 承辦單位 03-890')
 on conflict (term) do update set expands = excluded.expands;
 
 create or replace function public.expand_query(q text)

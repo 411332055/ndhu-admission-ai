@@ -37,8 +37,8 @@ const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.1-flash-lite";
 const FALLBACK_MODELS = [GEMINI_MODEL, "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"].filter((m, i, a) => a.indexOf(m) === i);
 const EMBED_MODEL = Deno.env.get("EMBED_MODEL") ?? "gemini-embedding-001";
 const DIM = 768;
-const TOP_K = 4;
-const CANDIDATE_K = 8;
+const TOP_K = 5;
+const CANDIDATE_K = 10;
 const MIN_SIM = Number(Deno.env.get("MIN_SIMILARITY") ?? "0.62");
 const CHUNK_SIZE = 700;   // 每段字數（免費版向量額度每分鐘 100 次，段落大一點比較不會超過）
 const OVERLAP = 100;
@@ -296,12 +296,12 @@ async function expandQuery(q: string): Promise<string> {
     }
     if (!synCache?.rows?.length) return q;
     const lowerQ = q.toLowerCase();
-    const extra = synCache.rows
+    const extraParts = synCache.rows
       .filter((r) => r.term && lowerQ.includes(r.term.toLowerCase()))
-      .map((r) => r.expands)
-      .join(" ")
-      .trim();
-    return extra ? `${q} ${extra.slice(0, 120)}` : q;
+      .map((r) => r.expands);
+    if (/電話|分機|聯絡|窗口|哪個單位|找誰/.test(q)) extraParts.push("聯絡電話 分機 承辦單位 03-890");
+    const extra = extraParts.join(" ").trim();
+    return extra ? `${q} ${extra.slice(0, 140)}` : q;
   } catch {
     return q;
   }
@@ -427,10 +427,10 @@ function mergeAndRank(vecRaw: any[], kwRaw: any[], staff: boolean) {
   let vec = staff ? vecRaw : vecRaw.filter((h) => h.audience !== "staff");
   const kw = staff ? kwRaw : kwRaw.filter((h) => h.audience !== "staff");
 
-  // 相對分數截斷：當第一名語意分數高時，自動過濾明顯偏低分的離題雜訊
+  // 相對分數截斷：當第一名語意分數高時，過濾明顯偏低分的離題雜訊（放寬至 0.11 避免濾掉雙重問題的次要段落）
   if (vec.length > 1) {
     const topVec = Number(vec[0]?.similarity ?? 0);
-    const floor = Math.max(MIN_SIM, topVec - 0.08);
+    const floor = Math.max(MIN_SIM, topVec - 0.11);
     vec = vec.filter((h, i) => i === 0 || Number(h.similarity ?? 0) >= floor);
   }
 
@@ -618,7 +618,7 @@ async function chat(
 
   const ctx = hits.length
     ? hits.map((h: any, i: number) =>
-        `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${String(h.content ?? "").slice(0, i === 0 ? 700 : 520)}`).join("\n\n")
+        `[${i + 1}]${staff ? (h.audience === "staff" ? "〔內部〕" : "〔公開〕") : ""}（${h.source}）${String(h.content ?? "").slice(0, 780)}`).join("\n\n")
     : "（知識庫暫無直接對應文字，請先判讀使用者上傳的圖片內容並誠實說明；涉及未記載的東華規定請勿自行編造，建議洽詢教務處綜合業務組 03-8906143。）";
   const contents: any[] = hist.slice(-4).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -631,7 +631,7 @@ async function chat(
   const reqBody = {
     systemInstruction: { parts: [{ text: staff ? SYSTEM_STAFF : SYSTEM }] },
     contents,
-    generationConfig: { temperature: 0.3, maxOutputTokens: 640 },
+    generationConfig: { temperature: 0.3, maxOutputTokens: 800 },
   };
 
   // 串流模式：邊產生邊送到前端，不到 1 秒就會開始顯示文字
