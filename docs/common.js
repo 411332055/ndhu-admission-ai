@@ -102,14 +102,108 @@ window.APP_UI = (() => {
         <div class="lightbox-box">
           <div class="lightbox-bar">
             <span class="lightbox-title"></span>
-            <a class="lightbox-open" target="_blank" rel="noopener noreferrer">在新分頁開啟原圖 ↗</a>
+            <span class="lightbox-zoom">
+              <button type="button" data-z="out" aria-label="縮小">−</button>
+              <button type="button" data-z="reset" title="重設大小">100%</button>
+              <button type="button" data-z="in" aria-label="放大">＋</button>
+            </span>
+            <a class="lightbox-open" target="_blank" rel="noopener noreferrer">原圖 ↗</a>
             <button type="button" class="lightbox-close" aria-label="關閉">✕</button>
           </div>
-          <div class="lightbox-body"><img alt=""></div>
+          <div class="lightbox-body"><img alt="" draggable="false"></div>
+          <div class="lightbox-hint">雙指縮放／滾輪縮放・拖曳移動・點兩下快速放大（不會縮放整個網頁）</div>
         </div>`;
-      lb.addEventListener('click', e => { if (e.target === lb) lb.hidden = true; });
-      lb.querySelector('.lightbox-close').onclick = () => { lb.hidden = true; };
-      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !lb.hidden) lb.hidden = true; });
+      const body = lb.querySelector('.lightbox-body');
+      const img = body.querySelector('img');
+      const resetBtn = lb.querySelector('[data-z="reset"]');
+      let scale = 1, tx = 0, ty = 0;
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+      const apply = () => {
+        scale = clamp(scale, 1, 4.5);
+        if (scale <= 1.01) { scale = 1; tx = 0; ty = 0; }
+        else {
+          const maxX = (img.clientWidth * (scale - 1)) / 2 + 40;
+          const maxY = (img.clientHeight * (scale - 1)) / 2 + 40;
+          tx = clamp(tx, -maxX, maxX);
+          ty = clamp(ty, -maxY, maxY);
+        }
+        img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+        body.style.cursor = scale > 1 ? 'grab' : 'zoom-in';
+        if (resetBtn) resetBtn.textContent = `${Math.round(scale * 100)}%`;
+      };
+      const reset = () => { scale = 1; tx = 0; ty = 0; apply(); };
+      const close = () => { lb.hidden = true; document.documentElement.style.overflow = ''; reset(); };
+      lb._resetZoom = reset;
+
+      lb.addEventListener('click', e => { if (e.target === lb) close(); });
+      lb.querySelector('.lightbox-close').onclick = close;
+      lb.querySelector('[data-z="in"]').onclick = () => { scale += 0.5; apply(); };
+      lb.querySelector('[data-z="out"]').onclick = () => { scale -= 0.5; apply(); };
+      resetBtn.onclick = reset;
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !lb.hidden) close(); });
+
+      // 電腦滾輪縮放與滑鼠拖曳
+      body.addEventListener('wheel', e => {
+        e.preventDefault();
+        scale += e.deltaY < 0 ? 0.25 : -0.25;
+        apply();
+      }, { passive: false });
+      let dragging = false, sx = 0, sy = 0;
+      body.addEventListener('mousedown', e => {
+        if (scale <= 1) return;
+        dragging = true; sx = e.clientX - tx; sy = e.clientY - ty;
+        body.style.cursor = 'grabbing';
+      });
+      window.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        tx = e.clientX - sx; ty = e.clientY - sy; apply();
+      });
+      window.addEventListener('mouseup', () => { if (dragging) { dragging = false; apply(); } });
+      body.addEventListener('dblclick', () => { scale = scale > 1.2 ? 1 : 2.5; apply(); });
+
+      // 手機雙指縮放與單指拖曳（攔截瀏覽器預設縮放，整個網站不會跟著放大）
+      let pinchDist = 0, pinchScale = 1, tDrag = false, tsx = 0, tsy = 0, lastTap = 0;
+      const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+      body.addEventListener('touchstart', e => {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          tDrag = false;
+          pinchDist = dist(e.touches) || 1;
+          pinchScale = scale;
+        } else if (e.touches.length === 1) {
+          const now = Date.now();
+          if (now - lastTap < 280) {
+            e.preventDefault();
+            scale = scale > 1.2 ? 1 : 2.5;
+            apply();
+            lastTap = 0;
+            return;
+          }
+          lastTap = now;
+          if (scale > 1) {
+            e.preventDefault();
+            tDrag = true;
+            tsx = e.touches[0].clientX - tx;
+            tsy = e.touches[0].clientY - ty;
+          }
+        }
+      }, { passive: false });
+      body.addEventListener('touchmove', e => {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          scale = pinchScale * (dist(e.touches) / pinchDist);
+          apply();
+        } else if (e.touches.length === 1 && tDrag && scale > 1) {
+          e.preventDefault();
+          tx = e.touches[0].clientX - tsx;
+          ty = e.touches[0].clientY - tsy;
+          apply();
+        }
+      }, { passive: false });
+      body.addEventListener('touchend', e => {
+        if (e.touches.length < 2) pinchDist = 0;
+        if (e.touches.length === 0) tDrag = false;
+      });
       document.body.appendChild(lb);
     }
     lb.querySelector('.lightbox-title').textContent = caption || '圖片檢視';
@@ -117,6 +211,8 @@ window.APP_UI = (() => {
     const img = lb.querySelector('.lightbox-body img');
     img.src = url;
     img.alt = caption || '圖片';
+    if (lb._resetZoom) lb._resetZoom();
+    document.documentElement.style.overflow = 'hidden';
     lb.hidden = false;
   }
   function renderImages(images) {
