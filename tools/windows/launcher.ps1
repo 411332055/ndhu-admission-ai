@@ -91,6 +91,28 @@ function Invoke-Deploy {
   Wait-Key
 }
 
+function Read-Password([string]$prompt = '請輸入管理密碼（按 Enter 送出）：') {
+  Write-Host $prompt -NoNewline
+  $buf = [System.Text.StringBuilder]::new()
+  while ($true) {
+    $k = [Console]::ReadKey($true)
+    if ($k.Key -eq 'Enter') { Write-Host ''; break }
+    if ($k.Key -eq 'Escape') { Write-Host ''; return '' }
+    if ($k.Key -eq 'Backspace') {
+      if ($buf.Length -gt 0) {
+        [void]$buf.Remove($buf.Length - 1, 1)
+        Write-Host "`b `b" -NoNewline
+      }
+      continue
+    }
+    if ($k.KeyChar -ne [char]0 -and -not [char]::IsControl($k.KeyChar)) {
+      [void]$buf.Append($k.KeyChar)
+      Write-Host '*' -NoNewline
+    }
+  }
+  return $buf.ToString()
+}
+
 function Invoke-Eval {
   Show-Step '正確率測試：15 題，約 3 分鐘（每分鐘最多 8 題，會自動放慢）'
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -98,8 +120,8 @@ function Invoke-Eval {
     Start-Process 'https://nodejs.org'
     return Show-Fail
   }
-  $sec = Read-Host '請輸入管理密碼（輸入時不會顯示）' -AsSecureString
-  $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+  $plain = Read-Password '請輸入管理密碼（即時顯示星號）：'
+  if (-not $plain) { return }
   $env:ADMIN_KEY = $plain
   node tools/eval.mjs
   Remove-Item Env:ADMIN_KEY -ErrorAction SilentlyContinue
@@ -113,8 +135,8 @@ function Invoke-ImportPack {
     Start-Process 'https://nodejs.org'
     return Show-Fail
   }
-  $sec = Read-Host '請輸入管理密碼（輸入時不會顯示）' -AsSecureString
-  $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+  $plain = Read-Password '請輸入管理密碼（即時顯示星號）：'
+  if (-not $plain) { return }
   $env:ADMIN_KEY = $plain
   node tools/import-pack.mjs
   Remove-Item Env:ADMIN_KEY -ErrorAction SilentlyContinue
