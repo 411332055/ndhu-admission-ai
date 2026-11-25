@@ -22,10 +22,10 @@
     <section class="panel">
       <h2>行政人員登入</h2>
       <div class="status">這裡的內容包含內部作業資料，只開放處理入學業務的行政人員使用。</div>
-      <div class="row">
-        <input type="password" id="key" placeholder="行政人員密碼" style="flex:1">
-        <button class="primary" id="login">登入</button>
-      </div>
+      <form class="row" id="loginForm">
+        <input type="password" id="key" aria-label="行政人員密碼" autocomplete="current-password" placeholder="行政人員密碼" style="flex:1">
+        <button class="primary" id="login" type="submit">登入</button>
+      </form>
       <div class="status" id="loginStatus"></div>
     </section>
   </main>
@@ -57,7 +57,7 @@
         <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" hidden>
         <button class="img-btn" id="pickImg" type="button" title="上傳圖片提問（也可直接 Ctrl+V 貼上截圖）">📷</button>
         <button class="img-btn voice-btn" id="voiceBtn" type="button" title="語音提問（點擊說話）">🎙️</button>
-        <textarea id="q" rows="1" placeholder="輸入問題、點擊麥克風說話或貼上截圖，Enter 送出"></textarea>
+        <textarea id="q" rows="1" placeholder="輸入問題、語音或貼上截圖…"></textarea>
         <button class="primary" id="send" type="submit">送出</button>
       </form>
     </div>
@@ -144,8 +144,7 @@ function logout() {
   chat.innerHTML = WELCOME_HTML; bindChips();
   $('loginPane').hidden = false; $('app').hidden = true; $('logout').hidden = true;
 }
-$('login').onclick = login;
-$('key').onkeydown = e => { if (e.key === 'Enter') login(); };
+$('loginForm').onsubmit = e => { e.preventDefault(); login(); };
 $('logout').onclick = e => { e.preventDefault(); logout(); };
 
 // ── 分頁 ──

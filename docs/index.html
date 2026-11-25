@@ -28,9 +28,9 @@
         <button type="button" class="cat-tab" data-cat="life">🏠 宿舍與生活</button>
       </div>
       <div class="chips" id="welcomeChips">
-        <button class="chip">申請入學有幾個階段？</button>
         <button class="chip">新生報到要準備什麼？</button>
         <button class="chip">忘記上傳畢業證書怎麼辦？</button>
+        <button class="chip">新生註冊須知有哪些重要事項？</button>
       </div>
     </div>
   </main>
@@ -40,7 +40,7 @@
     <input type="file" id="imgFile" accept="image/png,image/jpeg,image/webp" hidden>
     <button class="img-btn" id="pickImg" type="button" title="上傳圖片提問（也可直接 Ctrl+V 貼上截圖）">📷</button>
     <button class="img-btn voice-btn" id="voiceBtn" type="button" title="語音提問（點擊說話）">🎙️</button>
-    <textarea id="q" rows="1" placeholder="輸入問題、點擊麥克風說話或貼上截圖，Enter 送出"></textarea>
+    <textarea id="q" rows="1" placeholder="輸入問題、語音或貼上截圖…"></textarea>
     <button class="primary" id="send" type="submit">送出</button>
   </form>
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
@@ -230,7 +230,7 @@ async function ask(question) {
 }
 
 const WELCOME_CATS = {
-  admission: ['申請入學有幾個階段？', '新生報到要準備什麼？', '忘記上傳畢業證書怎麼辦？'],
+  admission: ['新生報到要準備什麼？', '忘記上傳畢業證書怎麼辦？', '新生註冊須知有哪些重要事項？'],
   fee: ['學雜費可以怎麼繳？', '就學貸款怎麼申請？', '學雜費減免與獎學金資格？'],
   map: ['東華校園導覽平面圖', '管理學院平面圖', '人社一館平面圖', '理工二館三樓平面圖', '圖書館三樓平面圖'],
   life: ['新生宿舍怎麼申請與進住？', '新生體檢要注意什麼？', '怎麼從志學火車站到東華？'],

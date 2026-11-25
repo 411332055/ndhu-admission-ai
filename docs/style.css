@@ -398,6 +398,7 @@ form.ask textarea {
   border-radius: 16px;
   padding: 11px 15px;
   font: inherit;
+  line-height: 1.45;
   min-height: 48px;
   max-height: 140px;
   background: var(--card);
@@ -943,4 +944,8 @@ html[data-theme="dark"] .cat-badge.staff { background: #192842; color: #9fc0ff; 
   .bubble { max-width: 88%; padding: 11px 14px; }
   .welcome { padding: 24px 10px 10px; }
   .welcome h2 { font-size: 1.15rem; }
+  form.ask { padding: 10px 12px 12px; gap: 6px; }
+  form.ask textarea { padding: 10px 12px; min-height: 44px; font-size: .95rem; }
+  .img-btn { min-width: 42px; min-height: 44px; font-size: 1.05rem; border-radius: 12px; }
+  form.ask button.primary { min-height: 44px; padding: 0 14px; font-size: .92rem; }
 }

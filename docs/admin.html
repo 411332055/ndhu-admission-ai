@@ -20,10 +20,10 @@
   <main>
     <section class="panel">
       <h2>管理密碼</h2>
-      <div class="row">
-        <input type="password" id="key" placeholder="輸入 ADMIN_KEY" style="flex:1">
-        <button class="primary" id="login">登入</button>
-      </div>
+      <form class="row" id="loginForm">
+        <input type="password" id="key" aria-label="管理密碼" autocomplete="current-password" placeholder="輸入 ADMIN_KEY" style="flex:1">
+        <button class="primary" id="login" type="submit">登入</button>
+      </form>
       <div class="status" id="loginStatus"></div>
     </section>
 
@@ -477,7 +477,7 @@ async function importUrls() {
   loadSources();
 }
 
-$('login').onclick = login;
+$('loginForm').onsubmit = e => { e.preventDefault(); login(); };
 $('importUrls').onclick = importUrls;
 $('fillMaps').onclick = async () => {
   const maps = [
@@ -538,7 +538,6 @@ $('fillMaps').onclick = async () => {
   $('fillMaps').disabled = false;
   loadSources();
 };
-$('key').onkeydown = e => { if (e.key === 'Enter') login(); };
 $('upload').onclick = upload;
 $('synAdd').onclick = async () => {
   $('synAdd').disabled = true;
