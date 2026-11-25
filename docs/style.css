@@ -1,18 +1,21 @@
 :root {
   --green: #1b6b46;
   --green-light: #26875a;
-  --green-dark: #12482f;
+  --green-dark: #10422b;
   --green-soft: #e6f4ec;
   --green-tint: #f1f8f4;
+  --gold: #c69320;
+  --gold-soft: #fdf7e7;
+  --gold-line: rgba(198, 147, 32, 0.34);
   --bg: #f3f6f4;
   --card: #ffffff;
-  --text: #1a241f;
-  --muted: #5e6c64;
-  --line: #dce4df;
+  --text: #18231d;
+  --muted: #5a6961;
+  --line: #dae3dd;
   --radius: 16px;
-  --shadow-sm: 0 2px 8px rgba(18, 72, 47, 0.05);
-  --shadow-md: 0 8px 24px rgba(18, 72, 47, 0.08);
-  --shadow-lg: 0 12px 32px rgba(18, 72, 47, 0.12);
+  --shadow-sm: 0 2px 10px rgba(16, 66, 43, 0.055);
+  --shadow-md: 0 8px 24px rgba(16, 66, 43, 0.09);
+  --shadow-lg: 0 14px 36px rgba(16, 66, 43, 0.13);
   --err: #b3261e;
   --err-soft: #fdecea;
 }
@@ -22,8 +25,8 @@ html, body { margin: 0; height: 100%; }
 body {
   font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   background:
-    radial-gradient(circle at 12% 0%, rgba(38, 135, 90, 0.08) 0%, transparent 42%),
-    radial-gradient(circle at 88% 12%, rgba(27, 107, 70, 0.06) 0%, transparent 38%),
+    radial-gradient(circle at 10% 0%, rgba(38, 135, 90, 0.09) 0%, transparent 44%),
+    radial-gradient(circle at 90% 8%, rgba(198, 147, 32, 0.08) 0%, transparent 38%),
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
@@ -43,15 +46,24 @@ a:hover { color: var(--green-dark); text-decoration: underline; }
 
 /* ── 頂部導覽列 ── */
 header {
-  padding: 16px 22px 14px;
-  border-bottom: 1px solid rgba(220, 228, 223, 0.85);
-  background: rgba(255, 255, 255, 0.86);
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid rgba(218, 227, 221, 0.9);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 4px 16px rgba(18, 72, 47, 0.04);
+  box-shadow: 0 4px 18px rgba(16, 66, 43, 0.05);
+}
+header::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--green-dark) 0%, var(--green) 62%, var(--gold) 100%);
 }
 header h1 {
   margin: 0;
@@ -250,17 +262,18 @@ body.staff .msg.bot::before {
   animation: msgIn .4s ease both;
 }
 .welcome-badge {
-  width: 66px;
-  height: 66px;
+  width: 68px;
+  height: 68px;
   margin: 0 auto 14px;
   border-radius: 22px;
   background: linear-gradient(135deg, var(--green-light), var(--green-dark));
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
   color: #fff;
   font-size: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10px 24px rgba(27, 107, 70, 0.24);
+  box-shadow: 0 10px 26px rgba(16, 66, 43, 0.22), 0 0 0 4px rgba(198, 147, 32, 0.16);
   animation: floatBadge 3.6s ease-in-out infinite;
 }
 @keyframes floatBadge {
@@ -375,9 +388,9 @@ body.staff .msg.bot::before {
   transition: all .2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .chip:hover {
-  border-color: var(--green);
+  border-color: var(--gold);
   color: var(--green-dark);
-  background: var(--green-tint);
+  background: linear-gradient(180deg, #fffdf8 0%, var(--green-tint) 100%);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -668,14 +681,26 @@ body.staff header .links a:hover { background: rgba(255, 255, 255, 0.18); }
   margin-top: 10px;
 }
 .kpi-card {
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbf8 100%);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--card) 0%, var(--green-tint) 100%);
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 14px 14px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s ease, box-shadow .18s ease;
 }
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--green), var(--gold));
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .kpi-label { font-size: .78rem; color: var(--muted); font-weight: 600; }
 .kpi-val { font-size: 1.45rem; font-weight: 800; color: var(--green-dark); line-height: 1.2; }
 .kpi-sub { font-size: .74rem; color: var(--muted); }
@@ -690,7 +715,7 @@ body.staff header .links a:hover { background: rgba(255, 255, 255, 0.18); }
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--green-light), var(--green));
+  background: linear-gradient(90deg, var(--green-light), var(--gold));
 }
 
 /* ── 導覽列功能按鈕與 QR Code 彈窗 ── */
@@ -752,6 +777,9 @@ html[data-theme="dark"] {
   --green-dark: #9be5be;
   --green-soft: #1b382a;
   --green-tint: #172b22;
+  --gold: #e5ba56;
+  --gold-soft: #2b2312;
+  --gold-line: rgba(229, 186, 86, 0.34);
   --bg: #0f1613;
   --card: #16211c;
   --text: #e7f0eb;
@@ -765,8 +793,12 @@ html[data-theme="dark"] {
 html[data-theme="dark"] body {
   background:
     radial-gradient(circle at 12% 0%, rgba(47, 163, 107, 0.14) 0%, transparent 45%),
-    radial-gradient(circle at 88% 12%, rgba(47, 163, 107, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 88% 10%, rgba(229, 186, 86, 0.08) 0%, transparent 40%),
     var(--bg);
+}
+html[data-theme="dark"] .chip:hover {
+  background: var(--green-tint);
+  border-color: var(--gold);
 }
 html[data-theme="dark"] header {
   background: rgba(20, 31, 26, 0.88);
@@ -971,8 +1003,18 @@ html[data-theme="dark"] .cat-badge.staff { background: #192842; color: #9fc0ff; 
 .msg, .msg .bubble { scroll-margin-bottom: 96px; }
 
 /* 來源連結、筆記編輯、系統狀態 */
-a.src-link { text-decoration: none; cursor: pointer; }
-a.src-link:hover { text-decoration: underline; }
+a.src-link {
+  text-decoration: none;
+  cursor: pointer;
+  transition: all .16s ease;
+}
+a.src-link:hover {
+  text-decoration: none;
+  border-color: var(--gold);
+  background: var(--gold-soft);
+  color: var(--green-dark);
+  transform: translateY(-1px);
+}
 .note-title { width: 100%; margin: 8px 0 6px; font-size: 16px; font-weight: 600; }
 .note-body { width: 100%; min-height: 110px; font-size: 16px; }
 .sub-h { font-size: 1rem; margin: 16px 0 6px; }
