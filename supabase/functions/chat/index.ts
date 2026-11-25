@@ -177,13 +177,25 @@ async function gemini(path: string, body: unknown) {
   const paths = isGen ? FALLBACK_MODELS.map((m) => `models/${m}:generateContent`) : [path];
   let lastErr: Error | null = null;
   for (const p of paths) {
-    // Gemini 忙碌（429 / 500 / 503）時自動重試；若是 503/429 則優先切換備援模型
+    // Gemini 忙碌（429 / 500 / 503）或單次回應卡住超過 22 秒時，自動切換備援模型或重試
     for (let attempt = 0; ; attempt++) {
-      const r = await fetch(`${API}/${p}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-        body: JSON.stringify(body),
-      });
+      let r: Response;
+      try {
+        r = await fetch(`${API}/${p}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(p.includes(":batchEmbedContents") ? 30_000 : 22_000),
+        });
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e));
+        if (paths.length > 1 && p !== paths[paths.length - 1]) {
+          console.warn(`model ${p} timed out/network error, switching fallback`);
+          break;
+        }
+        if (attempt < 1) { await new Promise((res) => setTimeout(res, 1500)); continue; }
+        throw lastErr;
+      }
       const data = await r.json().catch(() => ({}));
       if (r.ok) {
         if (p.includes(":batchEmbedContents")) bumpUsage("embed", (body as any)?.requests?.length ?? 1);
@@ -459,11 +471,23 @@ async function geminiStreamFetch(path: string, body: unknown) {
   let lastErr: Error | null = null;
   for (const p of paths) {
     for (let attempt = 0; ; attempt++) {
-      const r = await fetch(`${API}/${p}?alt=sse`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
-        body: JSON.stringify(body),
-      });
+      let r: Response;
+      try {
+        r = await fetch(`${API}/${p}?alt=sse`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": GEMINI_KEY },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(22_000),
+        });
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e));
+        if (paths.length > 1 && p !== paths[paths.length - 1]) {
+          console.warn(`stream model ${p} timed out/network error, switching fallback`);
+          break;
+        }
+        if (attempt < 1) { await new Promise((res) => setTimeout(res, 1500)); continue; }
+        throw lastErr;
+      }
       if (r.ok && r.body) { bumpUsage("generate"); return r; }
       const data = await r.json().catch(() => ({}));
       const msg = String(data?.error?.message ?? JSON.stringify(data));
