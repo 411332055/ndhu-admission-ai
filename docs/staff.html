@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://krbrxahyebnvjnxievjb.supabase.co" crossorigin>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗂️</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body class="staff">
 <div class="app">
@@ -101,11 +101,11 @@
   <footer>AI 回答僅供參考，正式規定請以東華大學官方公告為準。</footer>
 </div>
 
-<script src="config.js?v=9"></script>
-<script src="common.js?v=9"></script>
+<script src="config.js?v=10"></script>
+<script src="common.js?v=10"></script>
 <script>
 const URL_ = window.APP_CONFIG.FUNCTION_URL;
-const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, showError, idleAbort, warmup } = window.APP_UI;
+const { esc, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, showError, idleAbort, warmup, speakAnswer, copyStudentReply } = window.APP_UI;
 initTheme(document.getElementById('themeBtn'));
 warmup(URL_);
 const $ = id => document.getElementById(id);
@@ -194,6 +194,14 @@ function renderFinal(bubble, question, d, persist = true) {
   bubble.querySelectorAll('.followup-chip').forEach(b => b.onclick = () => ask(b.textContent));
   const bar = document.createElement('div');
   bar.className = 'fb';
+  const sp = document.createElement('button');
+  sp.type = 'button'; sp.textContent = '🔊 朗讀';
+  sp.onclick = () => speakAnswer(d.answer, sp);
+  bar.appendChild(sp);
+  const tplBtn = document.createElement('button');
+  tplBtn.type = 'button'; tplBtn.textContent = '✉️ 轉成學生回覆範本';
+  tplBtn.onclick = () => copyStudentReply(question, d.answer, tplBtn);
+  bar.appendChild(tplBtn);
   const cp = document.createElement('button');
   cp.type = 'button'; cp.className = 'copy-btn'; cp.textContent = '📋 複製回答';
   cp.onclick = async () => {

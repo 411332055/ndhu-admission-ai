@@ -516,5 +516,140 @@ window.APP_UI = (() => {
     if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', mount, { once: true });
   })();
-  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup, shareAnswer, openContactsModal, openScheduleModal };
+  // AI 語音朗讀回覆（瀏覽器內建 TTS，支援中英文自動辨識，0 額度消耗）
+  let speakingBtn = null;
+  function speakAnswer(text, btn) {
+    if (!('speechSynthesis' in window)) {
+      alert('此瀏覽器不支援語音朗讀功能。');
+      return;
+    }
+    const synth = window.speechSynthesis;
+    if (speakingBtn === btn && synth.speaking) {
+      synth.cancel();
+      if (btn) btn.textContent = '🔊 朗讀';
+      speakingBtn = null;
+      return;
+    }
+    synth.cancel();
+    if (speakingBtn) speakingBtn.textContent = '🔊 朗讀';
+    const clean = String(text ?? '')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/[*#_`~>\[\]]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 1200);
+    if (!clean) return;
+    const u = new SpeechSynthesisUtterance(clean);
+    u.lang = /[a-z]{3,}/i.test(clean) && !/[一-鿿]/.test(clean) ? 'en-US' : 'zh-TW';
+    u.rate = 1.02;
+    speakingBtn = btn;
+    if (btn) btn.textContent = '⏹ 停止朗讀';
+    const done = () => {
+      if (speakingBtn === btn) {
+        if (btn) btn.textContent = '🔊 朗讀';
+        speakingBtn = null;
+      }
+    };
+    u.onend = done;
+    u.onerror = done;
+    synth.speak(u);
+  }
+  // 行政人員端：把 AI 回答一鍵轉成禮貌正式的學生回覆範本（可直接貼 Email / LINE，0 額度）
+  async function copyStudentReply(question, answer, btn) {
+    const clean = String(answer ?? '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#{1,6}\s+/gm, '').trim();
+    const tpl = `同學您好：\n\n關於您詢問的「${question || '入學相關問題'}」，說明如下：\n\n${clean}\n\n若仍有疑問，歡迎於上班時間（週一至週五 08:30–17:00）致電國立東華大學教務處綜合業務組（03-8906143），我們將竭誠為您服務。\n\n國立東華大學教務處 敬上`;
+    try {
+      await navigator.clipboard.writeText(tpl);
+      if (btn) {
+        const old = btn.textContent;
+        btn.textContent = '✅ 已複製範本';
+        setTimeout(() => { btn.textContent = old; }, 1700);
+      }
+    } catch {}
+  }
+  // 新生專屬入學檢核清單（依身分篩選、勾選進度存手機、點「問AI」查規定）
+  function openChecklistModal(onAsk) {
+    const STORE = 'ndhu_checklist_v1';
+    const ITEMS = [
+      { id: 'upload', tags: ['ugrad', 'grad'], date: '8/27 截止', title: '上傳新生報到資料（畢業證書、身分證）', q: '新生報到資料最晚什麼時候要上傳？' },
+      { id: 'fee', tags: ['ugrad', 'grad'], date: '8/17 – 9/07', title: '下載註冊繳費單並完成繳費', q: '學雜費繳費單什麼時候可以下載？去哪裡下載？' },
+      { id: 'waiver', tags: ['aid'], date: '8/01 – 9/07', title: '申請學雜費減免（若符合資格）', q: '學雜費減免審核通過之後要怎麼繳費？' },
+      { id: 'loan', tags: ['aid'], date: '8/17 – 9/07', title: '辦理台灣銀行就學貸款與對保', q: '就學貸款怎麼申請？' },
+      { id: 'dorm_grad', tags: ['grad', 'dorm'], date: '8/03 – 8/16', title: '研究所新生宿舍申請', q: '研究所新生宿舍申請時間是什麼時候？' },
+      { id: 'dorm_in', tags: ['dorm'], date: '9/01', title: '住校新生入宿報到', q: '新生宿舍怎麼申請與進住？' },
+      { id: 'health', tags: ['ugrad', 'grad'], date: '開學前', title: '完成新生健康檢查（體檢）', q: '新生體檢要注意什麼？' },
+      { id: 'military', tags: ['ugrad', 'grad'], date: '8/01 起', title: '役男網路申請兵役緩徵／儘後召集', q: '新生兵役緩徵怎麼申請？' },
+      { id: 'course', tags: ['ugrad'], date: '9/02 – 9/05', title: '新生網路選課與新生入學活動', q: '新生入學活動要問哪個單位？' },
+      { id: 'reg', tags: ['ugrad', 'grad'], date: '9/07 起', title: '查詢註冊情形、列印在學證明', q: '什麼時候可以查詢註冊情形、列印在學證明？' },
+    ];
+    let done = {};
+    try { done = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch {}
+    const save = () => { try { localStorage.setItem(STORE, JSON.stringify(done)); } catch {} };
+
+    let m = document.getElementById('ndhu-checklist-modal');
+    if (!m) {
+      m = document.createElement('div');
+      m.id = 'ndhu-checklist-modal';
+      m.className = 'lightbox';
+      m.innerHTML = `
+        <div class="sheet-card">
+          <div class="sheet-head">
+            <h3>✅ 115 新生入學檢核表</h3>
+            <button type="button" class="lightbox-close" aria-label="關閉">✕</button>
+          </div>
+          <p class="sheet-sub">依身分篩選必辦事項，打勾會自動保存在你的手機裡</p>
+          <div class="chk-tabs" id="chkTabs">
+            <button type="button" class="on" data-f="all">全部</button>
+            <button type="button" data-f="ugrad">大學部</button>
+            <button type="button" data-f="grad">研究所</button>
+            <button type="button" data-f="aid">減免/學貸</button>
+            <button type="button" data-f="dorm">住宿生</button>
+          </div>
+          <div class="chk-prog">
+            <div class="chk-prog-text"><span id="chkStat">已完成 0 / 10</span><button type="button" class="chk-reset" id="chkReset">重設</button></div>
+            <div class="kpi-bar"><span id="chkBar" style="width:0%"></span></div>
+          </div>
+          <div class="sheet-list" id="chkList"></div>
+        </div>`;
+      m.addEventListener('click', e => { if (e.target === m) m.hidden = true; });
+      m.querySelector('.lightbox-close').onclick = () => { m.hidden = true; };
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) m.hidden = true; });
+      document.body.appendChild(m);
+    }
+    let filter = 'all';
+    const render = () => {
+      const list = filter === 'all' ? ITEMS : ITEMS.filter(it => it.tags.includes(filter));
+      const cnt = list.filter(it => done[it.id]).length;
+      const pct = list.length ? Math.round((cnt * 100) / list.length) : 0;
+      m.querySelector('#chkStat').textContent = `已完成 ${cnt} / ${list.length} 項（${pct}%）${pct === 100 ? ' 🎉' : ''}`;
+      m.querySelector('#chkBar').style.width = `${pct}%`;
+      const box = m.querySelector('#chkList');
+      box.innerHTML = list.map(it => `
+        <div class="sheet-row chk-row ${done[it.id] ? 'is-done' : ''}">
+          <label class="chk-label">
+            <input type="checkbox" data-id="${esc(it.id)}" ${done[it.id] ? 'checked' : ''}>
+            <span class="sheet-info"><b>${esc(it.title)}</b><span>📅 ${esc(it.date)}</span></span>
+          </label>
+          <button type="button" class="chk-ask" data-q="${esc(it.q)}">問 AI</button>
+        </div>`).join('');
+      box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
+        done[cb.dataset.id] = cb.checked;
+        save();
+        render();
+      });
+      box.querySelectorAll('.chk-ask').forEach(b => b.onclick = () => {
+        m.hidden = true;
+        if (onAsk) onAsk(b.dataset.q);
+      });
+    };
+    m.querySelectorAll('#chkTabs button').forEach(b => b.onclick = () => {
+      filter = b.dataset.f;
+      m.querySelectorAll('#chkTabs button').forEach(x => x.classList.toggle('on', x === b));
+      render();
+    });
+    m.querySelector('#chkReset').onclick = () => { done = {}; save(); render(); };
+    render();
+    m.hidden = false;
+  }
+  return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup, shareAnswer, openContactsModal, openScheduleModal, speakAnswer, copyStudentReply, openChecklistModal };
 })();
