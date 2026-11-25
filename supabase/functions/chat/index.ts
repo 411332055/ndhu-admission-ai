@@ -308,12 +308,12 @@ async function expandQuery(q: string): Promise<string> {
     }
     if (!synCache?.rows?.length) return q;
     const lowerQ = q.toLowerCase();
-    const extraParts = synCache.rows
+    const extra = synCache.rows
       .filter((r) => r.term && lowerQ.includes(r.term.toLowerCase()))
-      .map((r) => r.expands);
-    if (/電話|分機|聯絡|窗口|哪個單位|找誰/.test(q)) extraParts.push("聯絡電話 分機 承辦單位 03-890");
-    const extra = extraParts.join(" ").trim();
-    return extra ? `${q} ${extra.slice(0, 140)}` : q;
+      .map((r) => r.expands)
+      .join(" ")
+      .trim();
+    return extra ? `${q} ${extra.slice(0, 120)}` : q;
   } catch {
     return q;
   }

@@ -31,10 +31,10 @@ const CASES = [
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const NO_DATA = /沒有(這方面|相關|這項)|還沒有|doesn't have|not (have|available)/;
+const NO_DATA = /沒有(這方面|相關|這項|關於|提供|記載|紀錄)|還沒有|並未(明確)?(列出|記載|提供)|doesn't have|not (have|available)/;
 
 async function ask(q) {
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     try {
       const r = await fetch(URL, {
         method: "POST",
@@ -45,9 +45,10 @@ async function ask(q) {
       const d = await r.json();
       if (r.ok && d.answer) return d.answer;
       if (r.status === 429) { await sleep(20_000); continue; }
+      if (r.status === 503 && i < 2) { await sleep(6_000); continue; }
       return `（錯誤 ${r.status}：${d.error ?? ""}）`;
     } catch (e) {
-      if (i === 1) return `（逾時或連線失敗：${e.message}）`;
+      if (i === 2) return `（逾時或連線失敗：${e.message}）`;
       await sleep(5_000);
     }
   }
