@@ -1225,3 +1225,16 @@ a.src-link:hover {
 .note-title { width: 100%; margin: 8px 0 6px; font-size: 16px; font-weight: 600; }
 .note-body { width: 100%; min-height: 110px; font-size: 16px; }
 .sub-h { font-size: 1rem; margin: 16px 0 6px; }
+.ver-tag {
+  position: fixed;
+  right: 10px;
+  bottom: max(5px, env(safe-area-inset-bottom));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  color: var(--muted);
+  opacity: .5;
+  pointer-events: none;
+  user-select: none;
+  z-index: 4;
+}

@@ -398,5 +398,21 @@ window.APP_UI = (() => {
       keepalive: true,
     }).catch(() => {});
   }
+  // 自動在右下角顯示目前前端版本號（直接讀 common.js?v= 的數字，方便確認手機有無吃到最新版）
+  (() => {
+    const src = document.currentScript?.src || [...document.scripts].map(s => s.src).find(u => /common\.js\?v=/.test(u)) || '';
+    const v = (src.match(/[?&]v=(\d+)/) || [])[1];
+    if (!v) return;
+    const mount = () => {
+      if (document.getElementById('app-ver-tag')) return;
+      const el = document.createElement('div');
+      el.id = 'app-ver-tag';
+      el.className = 'ver-tag';
+      el.textContent = `v${v}`;
+      document.body.appendChild(el);
+    };
+    if (document.body) mount();
+    else document.addEventListener('DOMContentLoaded', mount, { once: true });
+  })();
   return { esc, linkify, md, cleanPreview, readImage, startSearchAnim, renderImages, bindImageCards, bindVoice, suggestFollowups, initTheme, openQrModal, friendlyError, showError, idleAbort, warmup };
 })();
