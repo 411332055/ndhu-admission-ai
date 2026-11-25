@@ -119,6 +119,9 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 
 ## 待辦
 
+完整的優化清單（含優先順序與完成標準）在 `ROADMAP.md`，接手時先讀。
+
+
 - [ ] 使用者在 Supabase Secrets 設定 `STAFF_KEY`（未設定前行政人員端登入會回傳尚未設定密碼）
 - [ ] 補「115 申請入學考生應試手冊」
 - [ ] 組員訪談教務處綜合業務組（03-8906143），把常見電話問題、例外處理以「內部」上傳
