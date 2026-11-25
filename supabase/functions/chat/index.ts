@@ -1043,6 +1043,59 @@ async function reviewNote(id: number, approve: boolean, title?: string, content?
   return json({ ok: true, edited });
 }
 
+// 重新切段：把同一份文件現有的段落按順序接回原文（去掉段與段之間重疊的字），再用新的切段規則重切。
+// 只用向量額度、不用生成額度；先算好新向量才替換，失敗時舊資料保留。由 pg_cron 定時呼叫，只處理 rechunk_queue 裡排好的來源。
+function joinChunks(parts: string[]) {
+  let text = parts[0] ?? "";
+  for (let i = 1; i < parts.length; i++) {
+    const b = parts[i];
+    let cut = 0;
+    for (let k = Math.min(160, b.length, text.length); k >= 8; k--) {
+      if (text.endsWith(b.slice(0, k))) { cut = k; break; }
+    }
+    text += (cut ? "" : "\n") + b.slice(cut);
+  }
+  return text;
+}
+
+async function rechunkStep(budget = 90, dailyCap = 600) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  const { data: u } = await sb.from("usage_daily").select("calls").eq("day", today).eq("kind", "embed").maybeSingle();
+  if ((u?.calls ?? 0) >= dailyCap) return json({ ok: true, paused: "今日向量額度已用到保留線，明天繼續" });
+  const { data: items } = await sb.from("rechunk_queue").select("source").eq("status", "pending").order("old_chunks").limit(10);
+  if (!items?.length) return json({ ok: true, idle: true });
+  let used = 0;
+  const done: string[] = [];
+  for (const it of items) {
+    if (used >= budget) break;
+    const { data: rows, error } = await sb.from("kb_chunks").select("id, content, audience, image_url").eq("source", it.source).order("id");
+    if (error || !rows?.length) {
+      await sb.from("rechunk_queue").update({ status: "error", error: error?.message ?? "找不到段落", updated_at: new Date().toISOString() }).eq("source", it.source);
+      continue;
+    }
+    const text = joinChunks(rows.map((r: any) => String(r.content).replace(/^【[^】\n]{1,80}】\n/, "")));
+    const expect = splitText(text, CHUNK_SIZE, OVERLAP, it.source).length;
+    if (used > 0 && used + expect > budget) break;
+    try {
+      const audience = rows[0].audience;
+      const img = rows.find((r: any) => r.image_url)?.image_url ?? null;
+      const res = await ingest(it.source, text, false, audience, img);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      used += body.chunks ?? expect;
+      done.push(it.source);
+      await sb.from("rechunk_queue").update({ status: "done", new_chunks: body.chunks, error: null, updated_at: new Date().toISOString() }).eq("source", it.source);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logError("rechunk", `${it.source}: ${msg}`);
+      // 額度不足：保留 pending，下次再試；其他錯誤記下來跳過
+      if (!/429/.test(msg)) await sb.from("rechunk_queue").update({ status: "error", error: msg.slice(0, 300), updated_at: new Date().toISOString() }).eq("source", it.source);
+      break;
+    }
+  }
+  return json({ ok: true, done, used });
+}
+
 // 備份用：匯出所有「公開」知識（不含向量與內部資料），給 GitHub Actions 每週存進 repo
 async function exportPublic() {
   const rows: any[] = [];
@@ -1099,6 +1152,7 @@ Deno.serve(async (req) => {
     }
     if (action === "feedback") return await feedback(Number(body.id), body.helpful, ip);
     if (action === "process_queue") return await processQueue();
+    if (action === "rechunk_step") return await rechunkStep();
 
     // 行政人員（管理者也可以）
     if (["staff_login", "top_questions", "submit_note"].includes(action)) {

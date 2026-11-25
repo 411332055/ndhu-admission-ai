@@ -349,3 +349,14 @@ alter table public.eval_runs enable row level security;
 -- 知識缺口補齊時間、經驗筆記版本紀錄
 alter table public.chat_logs add column if not exists resolved_at timestamptz;
 alter table public.staff_notes add column if not exists revisions jsonb not null default '[]'::jsonb;
+
+-- 重新切段佇列（rechunk_step 每次處理一小批，由 pg_cron 定時呼叫；用完記得 cron.unschedule）
+create table if not exists public.rechunk_queue (
+  source text primary key,
+  status text not null default 'pending',   -- pending / done / error
+  old_chunks integer not null default 0,
+  new_chunks integer,
+  error text,
+  updated_at timestamptz not null default now()
+);
+alter table public.rechunk_queue enable row level security;
