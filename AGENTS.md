@@ -125,6 +125,8 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 - 系統功能：已完成混合檢索（向量＋關鍵字 RRF）、口語同義詞對照、每分鐘提問頻率限制、熱門問題快取、SSE 串流回覆、圖片上傳與平面圖放大燈箱、語音提問、延伸推薦問題、深色模式、QR Code 分享與管理後台 KM 儀表板。
 - 簡報與展示稿已放置於 `presentation/`。
 - 正確率：11/25 以 15 題實測，12 題完全正確（`tools/eval.mjs`，控制台按 7 可重跑）。
+- 後端 v35（11/25 從雲端部署，入口檔 import GitHub 固定 commit 的 index.ts；之後用控制台 2 部署會改回直接上傳，沒有影響）。
+- 重切舊資料：`rechunk_queue` 74 份，pg_cron `rechunk-1125` 在 11/25–27 台灣 16:00–24:00 每 2 分鐘跑一步，每天向量用量到 600 自動停；全部完成後要 `select cron.unschedule('rechunk-1125')`。
 - 自動化：`.github/workflows/keepalive-backup.yml` 每天呼叫 health、每週一備份公開知識庫到 `backup/kb_public.json`。
 
 ## 待辦
