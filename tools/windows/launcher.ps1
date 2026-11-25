@@ -91,26 +91,49 @@ function Invoke-Deploy {
   Wait-Key
 }
 
-function Read-Password([string]$prompt = '請輸入管理密碼（按 Enter 送出）：') {
-  Write-Host $prompt -NoNewline
-  $buf = [System.Text.StringBuilder]::new()
-  while ($true) {
-    $k = [Console]::ReadKey($true)
-    if ($k.Key -eq 'Enter') { Write-Host ''; break }
-    if ($k.Key -eq 'Escape') { Write-Host ''; return '' }
-    if ($k.Key -eq 'Backspace') {
-      if ($buf.Length -gt 0) {
-        [void]$buf.Remove($buf.Length - 1, 1)
-        Write-Host "`b `b" -NoNewline
-      }
-      continue
-    }
-    if ($k.KeyChar -ne [char]0 -and -not [char]::IsControl($k.KeyChar)) {
-      [void]$buf.Append($k.KeyChar)
-      Write-Host '*' -NoNewline
-    }
+function Read-Password([string]$prompt = '請輸入管理密碼') {
+  # 使用 Windows 原生密碼輸入框（UseSystemPasswordChar）：系統會自動關閉注音組字，每個字即時顯示 ● 絕不露字
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+    Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = '東華入學 AI 助理｜密碼驗證'
+    $f.Size = New-Object System.Drawing.Size(380, 155)
+    $f.StartPosition = 'CenterScreen'
+    $f.FormBorderStyle = 'FixedDialog'
+    $f.MaximizeBox = $false
+    $f.MinimizeBox = $false
+    $f.TopMost = $true
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = $prompt
+    $lbl.Location = New-Object System.Drawing.Point(16, 16)
+    $lbl.AutoSize = $true
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Location = New-Object System.Drawing.Point(16, 42)
+    $tb.Width = 330
+    $tb.UseSystemPasswordChar = $true
+    $tb.ImeMode = [System.Windows.Forms.ImeMode]::Disable
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = '確定'
+    $ok.Location = New-Object System.Drawing.Point(186, 78)
+    $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = '取消'
+    $cancel.Location = New-Object System.Drawing.Point(271, 78)
+    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $f.AcceptButton = $ok
+    $f.CancelButton = $cancel
+    $f.Controls.AddRange(@($lbl, $tb, $ok, $cancel))
+    $f.Add_Shown({ $f.Activate(); $tb.Focus() })
+    $res = $f.ShowDialog()
+    $val = if ($res -eq [System.Windows.Forms.DialogResult]::OK) { $tb.Text } else { '' }
+    $f.Dispose()
+    return $val
+  } catch {
+    Write-Host "${prompt}：" -NoNewline
+    $sec = Read-Host -AsSecureString
+    return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
   }
-  return $buf.ToString()
 }
 
 function Invoke-Eval {
@@ -120,7 +143,7 @@ function Invoke-Eval {
     Start-Process 'https://nodejs.org'
     return Show-Fail
   }
-  $plain = Read-Password '請輸入管理密碼（即時顯示星號）：'
+  $plain = Read-Password '請輸入管理密碼（按 Enter 送出）：'
   if (-not $plain) { return }
   $env:ADMIN_KEY = $plain
   node tools/eval.mjs
@@ -135,7 +158,7 @@ function Invoke-ImportPack {
     Start-Process 'https://nodejs.org'
     return Show-Fail
   }
-  $plain = Read-Password '請輸入管理密碼（即時顯示星號）：'
+  $plain = Read-Password '請輸入管理密碼（按 Enter 送出）：'
   if (-not $plain) { return }
   $env:ADMIN_KEY = $plain
   node tools/import-pack.mjs
