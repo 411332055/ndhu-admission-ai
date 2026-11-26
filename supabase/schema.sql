@@ -384,3 +384,51 @@ insert into warm_queue (question) values
 ('畢業證書和身分證要什麼時候前上傳？'),('申請入學有幾個階段？'),('學雜費怎麼繳？'),('宿舍規定'),
 ('學雜費一學期多少錢？可以辦減免嗎？'),('如何申請停修'),('車證怎麼申請'),('企管系畢業要修哪些學分?')
 on conflict (question) do nothing;
+
+-- 關鍵字檢索：中文雙字詞重疊＋英數代碼。年份這類 2–3 位數字（115）幾乎每份文件都有，不計分；
+-- 「學年」「年度」也幾乎每份都有，列為停用詞；依未截斷的分數排序，避免很多段落同分 1.0 時亂排。
+create or replace function public.match_chunks_text(q text, match_count integer default 4, include_staff boolean default false)
+returns table(id bigint, source text, content text, similarity double precision, audience text, image_url text)
+language sql stable set search_path to 'public'
+as $function$
+  with grams as (
+    select distinct substr(q, i, 2) as g
+    from generate_series(1, greatest(char_length(q) - 1, 1)) as i
+    where substr(q, i, 2) !~ '[[:space:][:punct:]？，。、！：；「」（）『』]'
+      and substr(q, i, 2) !~ '^[A-Za-z0-9]+$'
+      and substr(q, i, 2) not in (
+        '什麼','怎麼','可以','要在','是否','請問','我要','如何','的時','時候',
+        '哪些','哪裡','多少','還有','如果','需要','應該','一下','關於','知道','告訴','我們','你們','他們',
+        '學年','年度'
+      )
+  ),
+  tokens as (
+    select distinct lower(m[1]) as t
+    from regexp_matches(q, '([A-Za-z0-9][A-Za-z0-9_+.-]{1,})', 'g') as m
+    where m[1] !~ '^[0-9]{1,3}$'
+  ),
+  counts as (
+    select (select count(*) from grams) as ng, (select count(*) from tokens) as nt
+  ),
+  scored as (
+    select c.id, c.source, c.content, c.audience, c.image_url,
+      case when (select ng from counts) > 0 then
+        (
+          (select count(*) from grams where strpos(c.content, grams.g) > 0)::float
+          + 1.6 * (select count(*) from grams where strpos(c.source, grams.g) > 0)::float
+        ) / ((select ng from counts)::float * 1.4)
+      else 0.0 end
+      + case when (select nt from counts) > 0 then
+        (
+          (select count(*) from tokens where strpos(lower(c.source || ' ' || c.content), tokens.t) > 0)::float
+          / (select nt from counts)::float
+        ) * 0.85
+      else 0.0 end as s
+    from public.kb_chunks c
+    where include_staff or c.audience = 'public'
+  )
+  select id, source, content, least(1.0, s), audience, image_url from scored
+  where s >= 0.32
+  order by s desc, id
+  limit match_count;
+$function$;
