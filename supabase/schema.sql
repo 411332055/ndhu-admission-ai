@@ -432,3 +432,17 @@ as $function$
   order by s desc, id
   limit match_count;
 $function$;
+
+-- 待匯入文字：查證過的整理文字（附官方原始網址）由維護者以 service role 寫入，staged_step 每次匯入一份
+create table if not exists staged_docs (
+  id bigserial primary key,
+  source text not null,
+  text text not null,
+  audience text not null default 'public',
+  status text not null default 'pending',
+  chunks int,
+  error text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table staged_docs enable row level security;

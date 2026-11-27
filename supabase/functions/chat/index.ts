@@ -1266,6 +1266,26 @@ async function rechunkStep(budget = 90, dailyCap = 600) {
   return json({ ok: true, done, used });
 }
 
+// 待匯入文字：查證過的整理文字由維護者（service role）寫進 staged_docs，這裡每次匯入一份。
+// 只處理資料庫裡排好的內容、不接受外部傳入文字，所以不需要密碼（與 process_queue 相同的設計）。
+async function stagedStep() {
+  const { data: items } = await sb.from("staged_docs").select("id, source, text, audience")
+    .eq("status", "pending").order("id").limit(1);
+  const it = items?.[0];
+  if (!it) return json({ ok: true, idle: true });
+  try {
+    const res = await ingest(it.source, it.text, false, it.audience === "staff" ? "staff" : "public");
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String(body.error ?? res.status));
+    await sb.from("staged_docs").update({ status: "done", chunks: body.chunks ?? 0, error: null, updated_at: new Date().toISOString() }).eq("id", it.id);
+    return json({ ok: true, source: it.source, chunks: body.chunks });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/429/.test(msg)) await sb.from("staged_docs").update({ status: "error", error: msg.slice(0, 300), updated_at: new Date().toISOString() }).eq("id", it.id);
+    return json({ error: msg }, 500);
+  }
+}
+
 // 快取預熱：報告前由 pg_cron 定時呼叫，每次把 warm_queue 裡最久沒預熱的一題問一次，答案存進快取（7 天）。
 // 已在快取的問題直接秒回、不用 Gemini 額度；紀錄標成 test，不算進統計。只問資料庫裡排好的題目，所以不需要密碼。
 async function warmStep() {
@@ -1341,6 +1361,7 @@ Deno.serve(async (req) => {
     if (action === "process_queue") return await processQueue();
     if (action === "rechunk_step") return await rechunkStep();
     if (action === "warm_step") return await warmStep();
+    if (action === "staged_step") return await stagedStep();
 
     // 行政人員（管理者也可以）
     if (["staff_login", "top_questions", "submit_note"].includes(action)) {

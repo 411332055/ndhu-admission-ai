@@ -68,6 +68,7 @@ GitHub：`411332055/ndhu-admission-ai`（學校帳號），Pages 從 `main` 分�
 | `health` | 公開 | 保持喚醒用（GitHub Actions 每天呼叫） |
 | `export_public` | 公開（每小時 4 次） | 匯出公開知識庫給每週備份（不含向量與內部資料） |
 | `warm_step` | 公開（只問 `warm_queue` 裡排好的題目） | 快取預熱：pg_cron `warm-1221` 在 12/21 台灣 16:00–18:00、12/22 06:00–08:00 每 2 分鐘問一題，答案快取 7 天 |
+| `staged_step` | 公開（只匯入 `staged_docs` 裡排好的文字） | 維護者把查證過、附官方原始網址的整理文字寫進 `staged_docs`，每次呼叫匯入一份；用於使用者不在時補資料 |
 | `save_eval` | `admin_key` | `tools/eval.mjs` 存正確率測試結果 |
 | `chat` 帶 `test:true`＋`admin_key` | `admin_key` | 測試用問答，紀錄 role 為 `test`，不算進統計與 Top 10 |
 
