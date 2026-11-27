@@ -135,6 +135,8 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 
 ## 待辦
 
+知識庫涵蓋度題庫在 `tools/question_bank.md`（新生與家長可能會問、但還沒有官方資料的主題），補資料時從 ❌ 項目開始。
+
 完整的優化清單（含優先順序與完成標準）在 `ROADMAP.md`，接手時先讀。
 
 
