@@ -152,7 +152,14 @@ function Invoke-Eval {
 }
 
 function Invoke-ImportPack {
-  Show-Step '一鍵匯入 115 官方知識包：10 份文件，約 25 秒（自動限速，不爆免費額度）'
+  Show-Step '重新匯入 115 補充知識包：12 份文件＋線上行事曆，約 30 秒'
+  Write-Host '這些文件 11/25 已經匯入過了，平常不需要再按。' -ForegroundColor Yellow
+  Write-Host '只有修改 tools/kb_pack_115.json 的內容後，才需要重新匯入。' -ForegroundColor Yellow
+  Write-Host '注意：匯入會清空答案快取（含 12/21 預熱好的答案），報告前一天到報告結束都不要按。' -ForegroundColor Yellow
+  Write-Host ''
+  Write-Host '確定要重新匯入嗎？輸入 Y 後按 Enter，其他鍵取消：' -NoNewline
+  $ans = Read-Host
+  if ($ans -notmatch '^[Yy]$') { Write-Host '已取消，沒有做任何變更。'; return Wait-Key }
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host '需要先安裝 Node.js（選 LTS 版本）。' -ForegroundColor Yellow
     Start-Process 'https://nodejs.org'
@@ -180,7 +187,7 @@ while ($true) {
   Write-Host '  5. 開啟管理後台'
   Write-Host '  6. 開啟 Supabase 控制台'
   Write-Host '  7. 跑正確率測試（30 題，約 5 分鐘）'
-  Write-Host '  8. 一鍵匯入 115 官方知識包（10 份）'
+  Write-Host '  8. 重新匯入 115 補充知識包（已匯入過，平常不用按）'
   Write-Host ''
   Write-Host '  0. 離開'
   Write-Host ''
