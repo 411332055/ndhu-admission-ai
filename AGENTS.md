@@ -101,6 +101,7 @@ Secrets（Supabase → Edge Functions → Secrets）：`GEMINI_API_KEY`、`ADMIN
 1. **改了 `docs/style.css`、`docs/common.js` 或 `docs/config.js`，三個頁面（index、staff、admin）引用它們的 `?v=` 數字都要加 1**，三頁保持一樣。不然使用者手機會一直用舊的檔案，新頁面配到舊程式。
 2. 推送後 GitHub 會自動檢查（`.github/workflows/check.yml`）：
    - `tools/check.js`：前端語法（含頁面裡的 `<script>`）、版本號一致、改共用檔有沒有加版本號、id 重複、有沒有把密碼或金鑰寫進程式。
+   - `tools/test/unit.mjs`：把本檔「重要設計」變成自動檢查——安全過濾該擋的擋、正常問題不擋；個資遮蔽不誤遮代碼與電話；切段上限與【文件名稱】；eval 判分規則；知識包每份附官方網址；程式用到的資料表／函式都在 schema.sql；.bat 純 ASCII、launcher.ps1 有 BOM；檢索都帶 include_staff。**同一種錯誤第二次出現時，在這裡加一項測試，而不是在本檔多寫一條警告。**
    - `tools/test/browser-test.mjs`：用**假後端**在模擬手機（iPhone、Samsung）上跑三個頁面：淺色／深色／360px 不能有錯誤或左右超出；學生端問答、斷網時的中文說明與「再問一次」、iPhone 輸入框字體、行政人員端登入與問答。不會連到 Supabase 或 Gemini，不用額度。
    - 到 GitHub 看那筆提交，紅色叉叉就是沒過，要馬上修。新功能可以順便在 `browser-test.mjs` 加一項。
 3. 輸入框字體至少 16px（iPhone 小於 16px 點下去整個畫面會自動放大）。顏色用 `style.css` 的 CSS 變數，深色模式（`html[data-theme="dark"]`）也要看得清楚。

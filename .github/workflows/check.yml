@@ -15,6 +15,8 @@ jobs:
         with:
           node-version: 22
       - run: node tools/check.js
+      # 單元測試：安全過濾、個資遮蔽、切段、判分規則、知識包出處、schema 同步、Windows 檔案編碼
+      - run: node tools/test/unit.mjs
   # 在模擬手機上把三個頁面跑一遍（假後端，不會用到 Gemini 額度）
   browser-test:
     runs-on: ubuntu-latest

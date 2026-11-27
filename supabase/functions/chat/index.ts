@@ -1273,6 +1273,11 @@ async function stagedStep() {
     .eq("status", "pending").order("id").limit(1);
   const it = items?.[0];
   if (!it) return json({ ok: true, idle: true });
+  // 沒有附官方來源網址的整理文字一律不收（避免沒有出處的 AI 自寫內容進入知識庫）
+  if (!/(原始網址|依據|出處)[^\n]{0,120}https?:\/\//.test(it.text.slice(0, 400))) {
+    await sb.from("staged_docs").update({ status: "error", error: "缺少官方原始網址，未匯入", updated_at: new Date().toISOString() }).eq("id", it.id);
+    return json({ error: "缺少官方原始網址" }, 400);
+  }
   try {
     const res = await ingest(it.source, it.text, false, it.audience === "staff" ? "staff" : "public");
     const body = await res.json().catch(() => ({}));
