@@ -986,7 +986,13 @@ async function pdfPart(fileUri: string, source: string, url: string, from: numbe
     generationConfig: { temperature: 0, maxOutputTokens: 32768 },
   });
   const text = (data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text ?? "").join("") ?? "").trim();
-  if (text.length < 30 || text.includes("（無此頁）")) return json({ ok: true, empty: true, chunks: 0 });
+  const finish = data?.candidates?.[0]?.finishReason ?? data?.promptFeedback?.blockReason ?? "none";
+  if (text.includes("（無此頁）")) return json({ ok: true, empty: true, chunks: 0 });
+  if (text.length < 30) {
+    // 不是「沒有這頁」，而是 AI 沒輸出文字（例如 RECITATION、SAFETY 或模型忙碌）：記錄原因，不要當成匯入完成
+    await logError("pdf_part", `${source} 第 ${from}-${to} 頁沒有讀到文字（finishReason: ${finish}）`);
+    return json({ error: `PDF 第 ${from}-${to} 頁沒有讀到文字（${finish}）` }, 502);
+  }
   const res = await ingest(source, `（原始網址：${url}，第 ${from}-${to} 頁）\n` + text, from > 1, audience);
   const body = await res.json();
   return json({ ...body, empty: false, truncated: data?.candidates?.[0]?.finishReason === "MAX_TOKENS" }, res.status);
