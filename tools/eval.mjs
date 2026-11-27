@@ -47,7 +47,7 @@ const CASES = [
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const NO_DATA = /沒有(這方面|相關|這項|關於|提供|記載|紀錄)|還沒有|並未(明確)?(列出|記載|提供)|doesn't have|not (have|available)/;
+const NO_DATA = /沒有(這方面|相關|這項|關於|提供|記載|紀錄)|還沒有|並未(明確)?(列出|記載|提供)|(並|尚)?無(相關|此|這方面)(的)?(資訊|資料|內容|紀錄)|查無|未(收錄|提及)|doesn't have|not (have|available)|no (relevant )?information/;
 
 async function ask(q) {
   for (let i = 0; i < 3; i++) {
