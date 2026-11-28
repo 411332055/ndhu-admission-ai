@@ -138,6 +138,7 @@ check("每晚檢查不讀快取", /chat\([^)]*,\s*true\)/.test(nb));
 check("每晚檢查寫入 nightly_checks", /nightly_checks/.test(nb));
 check("快取 key 會被 noCache 關掉", /const cacheKey = !noCache/.test(src));
 const nq = (src.match(/const NIGHTLY = \[([\s\S]*?)\];/)?.[1].match(/\{ q:/g) ?? []).length;
+check("每晚檢查比對前先去掉空白", /replace\(\/\\s\/g, ""\)/.test(nb));
 check("每晚只問 3 題（保護免費額度）", nq === 3);
 check("後台顯示每晚檢查", /nightlyList/.test(admin) && /d\.nightly/.test(admin));
 

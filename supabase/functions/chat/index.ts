@@ -1323,7 +1323,7 @@ async function warmStep() {
 // 檢查答案有沒有出現該有的關鍵字，結果存進 nightly_checks，後台「系統狀態」顯示最近 7 天。只用 3 次生成額度。
 const NIGHTLY = [
   { q: "東華大學學雜費可以分期嗎？", expect: ["分期"] },
-  { q: "新生健康檢查報告要在什麼時候前繳交？", expect: ["9/30", "9月30", "九月三十"] },
+  { q: "新生健康檢查報告要在什麼時候前繳交？", expect: ["9/30", "9月30", "九月三十", "09/30"] },
   { q: "衛生保健組的分機是多少？", expect: ["6253"] },
 ];
 async function nightlyCheck() {
@@ -1335,7 +1335,8 @@ async function nightlyCheck() {
       const res = await chat(it.q, [], "test", "nightly", false, null, true);
       const b = await res.json().catch(() => ({}));
       answer = String(b.answer ?? "");
-      ok = res.ok && it.expect.some((k) => answer.includes(k));
+      const flat = answer.replace(/\s/g, "");  // 「9 月 30 日」這種有空格的寫法也要算對
+      ok = res.ok && it.expect.some((k) => flat.includes(k));
       if (!res.ok) err = String(b.error ?? res.status);
       else if (!ok) err = "答案缺少關鍵字：" + it.expect.join("/");
     } catch (e) { err = String((e as Error)?.message ?? e); }
