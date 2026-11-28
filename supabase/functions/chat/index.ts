@@ -1407,7 +1407,11 @@ Deno.serve(async (req) => {
     if (action === "rechunk_step") return await rechunkStep();
     if (action === "warm_step") return await warmStep();
     if (action === "staged_step") return await stagedStep();
-    if (action === "nightly_check") return await nightlyCheck();
+    if (action === "nightly_check") {
+      // 公開動作，避免被人狂按消耗免費額度：全站 20 小時內最多 2 次（排程 1 次＋手動補測 1 次）
+      if (!(await allowRequest("nightly_check", 2, 72000))) return json({ error: "今天已經檢查過了" }, 429);
+      return await nightlyCheck();
+    }
 
     // 行政人員（管理者也可以）
     if (["staff_login", "top_questions", "submit_note"].includes(action)) {

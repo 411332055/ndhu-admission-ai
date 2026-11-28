@@ -163,5 +163,21 @@ for (const f of ["docs/index.html", "docs/staff.html"]) check(`${f} 用 srcPill 
   check("後台有分類長條圖", /id="catChart"/.test(adm) && /renderCatChart\(\);/.test(adm));
 }
 
+// 13. 公開動作（不用密碼）不能被拿來塞內容或狂耗額度
+{
+  const pub = ["health", "export_public", "process_queue", "rechunk_step", "warm_step", "staged_step", "nightly_check"];
+  const routerStart = src.indexOf("Deno.serve(");
+  const authAt = src.indexOf("rejectAuth", routerStart);
+  for (const a of pub) {
+    const at = src.indexOf(`action === "${a}"`, routerStart);
+    check(`公開動作 ${a} 在密碼檢查之前（不需要密碼）`, at > 0 && at < src.indexOf("if (action === \"ingest\")", routerStart));
+    const line = src.slice(at, src.indexOf("\n", at));
+    check(`公開動作 ${a} 不讀使用者送來的內容`, !/body\.(text|source|url|question|data|content)/.test(line));
+  }
+  check("nightly_check 有全站次數限制", /allowRequest\("nightly_check"/.test(src));
+  check("export_public 有次數限制", /allowRequest\(`export:/.test(src));
+  check("export_public 只匯出公開資料", /async function exportPublic[\s\S]{0,400}\.eq\("audience", "public"\)/.test(src));
+}
+
 console.log(`${fails ? "✗" : "✓"} 單元測試：${passes} 項通過、${fails} 項失敗`);
 process.exit(fails ? 1 : 0);
