@@ -534,6 +534,8 @@ async function geminiStreamFetch(path: string, body: unknown) {
   throw lastErr ?? new Error("Gemini 串流失敗");
 }
 
+const CLARIFY_ANSWER = "想問什麼呢？可以直接把問題打出來，例如「宿舍什麼時候可以入住？」或「學雜費怎麼繳？」，我會找官方資料回答你。";
+
 async function chat(
   question: string,
   history: { role: string; content: string }[] = [],
@@ -556,6 +558,10 @@ async function chat(
   question = maskPii(String(question ?? "").trim().slice(0, 500));
   if (!question && imgPart) question = "請說明這張圖片的內容，並結合東華大學入學規定回答我該注意什麼。";
   if (!question) return json({ error: "請輸入問題" }, 400);
+  // 只打標點或符號（例如「？？？」）：直接請對方把問題打出來，不用 Gemini 額度，也不記成知識缺口
+  if (!imgPart && !/[\p{L}\p{N}]/u.test(question)) {
+    return json({ answer: CLARIFY_ANSWER, sources: [], internal: [], top_score: null });
+  }
   if (SENSITIVE.test(question)) {
     await sb.from("chat_logs").insert({ question: imgPart ? `[圖片] ${question}` : question, answer: BLOCKED_ANSWER, sources: [], answered: false, status: "blocked", role, resolved: true });
     return json({ answer: BLOCKED_ANSWER, sources: [], internal: [], top_score: null });

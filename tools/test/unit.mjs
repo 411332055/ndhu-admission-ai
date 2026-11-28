@@ -179,5 +179,17 @@ for (const f of ["docs/index.html", "docs/staff.html"]) check(`${f} 用 srcPill 
   check("export_public 只匯出公開資料", /async function exportPublic[\s\S]{0,400}\.eq\("audience", "public"\)/.test(src));
 }
 
+// 14. 只打符號的問題不呼叫 AI、不記成知識缺口
+{
+  const re = /[\p{L}\p{N}]/u;
+  check("「？？？」判定為沒有內容", !re.test("？？？"));
+  check("「!!」判定為沒有內容", !re.test("!!"));
+  check("「車證」判定為有內容", re.test("車證"));
+  check("「ㄒㄩㄝˊ ㄈㄟˋ」注音判定為有內容", re.test("ㄒㄩㄝˊ ㄈㄟˋ"));
+  check("「3+2」判定為有內容", re.test("3+2"));
+  const at = src.indexOf("answer: CLARIFY_ANSWER");
+  check("符號檢查在寫入 chat_logs 之前", at > 0 && at < src.indexOf('sb.from("chat_logs").insert', src.indexOf("async function chat(")));
+}
+
 console.log(`${fails ? "✗" : "✓"} 單元測試：${passes} 項通過、${fails} 項失敗`);
 process.exit(fails ? 1 : 0);
