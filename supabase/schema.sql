@@ -446,3 +446,13 @@ create table if not exists staged_docs (
   updated_at timestamptz default now()
 );
 alter table staged_docs enable row level security;
+
+-- 每晚自動健康檢查結果（action nightly_check，由 pg_cron 每天台灣時間 03:00 呼叫）
+create table if not exists nightly_checks (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  passed int not null,
+  total int not null,
+  details jsonb not null default '[]'
+);
+alter table nightly_checks enable row level security;

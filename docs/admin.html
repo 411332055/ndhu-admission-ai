@@ -123,6 +123,8 @@
       <h3 class="sub-h">正確率測試紀錄</h3>
       <div class="status">在控制台按 7 執行（15 題，約 3 分鐘）。</div>
       <table><thead><tr><th>時間</th><th>完全正確</th><th>部分正確</th><th>題數</th></tr></thead><tbody id="evalList"></tbody></table>
+      <h3 class="sub-h">每晚自動健康檢查（台灣時間 03:00，固定 3 題）</h3>
+      <table><thead><tr><th>時間</th><th>結果</th><th>說明</th></tr></thead><tbody id="nightlyList"></tbody></table>
       <h3 class="sub-h">最近錯誤</h3>
       <table><thead><tr><th>時間</th><th>位置</th><th>訊息</th></tr></thead><tbody id="errList"></tbody></table>
     </section>
@@ -149,6 +151,11 @@ async function api(body) {
   const r = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, admin_key: KEY }) });
   const data = await r.json().catch(() => ({}));
+  // 報告保護期（12/21 16:00～12/22）：上傳／刪除前多確認一次，確定才帶 force 重送
+  if (r.status === 409 && data.code === 'report_freeze' && !body.force) {
+    if (confirm(data.error)) return api({ ...body, force: true });
+    throw new Error('已取消（報告保護期）');
+  }
   if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
   return data;
 }
@@ -395,6 +402,12 @@ function renderOps(d) {
   const runs = d.evalRuns || [];
   $('evalList').innerHTML = runs.length ? runs.map(r => `<tr><td>${fmt(r.created_at)}</td><td>${r.passed}</td><td>${r.partial}</td><td>${r.total}</td></tr>`).join('')
     : '<tr><td colspan="4" class="status">還沒有測試紀錄</td></tr>';
+  const nts = d.nightly || [];
+  $('nightlyList').innerHTML = nts.length ? nts.map(n => {
+    const bad = (n.details || []).filter(x => !x.ok).map(x => `${x.question}：${x.error || ''}`).join('；');
+    const avg = (n.details || []).length ? Math.round(n.details.reduce((a, x) => a + (x.ms || 0), 0) / n.details.length / 100) / 10 : 0;
+    return `<tr><td>${fmt(n.created_at)}</td><td>${n.passed === n.total ? '✅' : '⚠️'} ${n.passed} / ${n.total}</td><td>${bad ? esc(bad) : `全部正常，平均 ${avg} 秒`}</td></tr>`;
+  }).join('') : '<tr><td colspan="3" class="status">還沒有紀錄（第一次會在今晚 03:00 執行）</td></tr>';
   const errs = d.errors || [];
   $('errList').innerHTML = errs.length ? errs.map(e => `<tr><td>${fmt(e.created_at)}</td><td>${esc(e.action || '')}</td><td>${esc(e.message || '')}</td></tr>`).join('')
     : '<tr><td colspan="3" class="status">沒有錯誤 🎉</td></tr>';

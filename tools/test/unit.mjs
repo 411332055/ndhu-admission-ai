@@ -114,5 +114,37 @@ const calls = [...src.matchAll(/rpc\("match_chunks(_text)?",\s*\{([^}]*)\}/g)];
 check("有呼叫檢索函式", calls.length > 0);
 for (const c of calls) check(`檢索呼叫帶 include_staff：${c[0].slice(0, 60)}`, /include_staff/.test(c[2]));
 
+// 9. 報告保護期：上傳／刪除類動作在 12/21 16:00～12/22 要帶 force，清快取後要重設預熱
+const fz = src.match(/const FREEZE_FROM = Date\.parse\("([^"]+)"\);\s*const FREEZE_TO = Date\.parse\("([^"]+)"\)/);
+check("有報告保護期設定", !!fz);
+if (fz) {
+  check("保護期從台灣 12/21 16:00 開始", Date.parse(fz[1]) === Date.parse("2026-12-21T16:00:00+08:00"));
+  check("保護期到台灣 12/22 24:00 結束", Date.parse(fz[2]) === Date.parse("2026-12-23T00:00:00+08:00"));
+}
+const guard = src.match(/\[([^\]]+)\]\.includes\(action\) && inReportFreeze\(\) && body\.force !== true/);
+check("路由有保護期檢查", !!guard);
+for (const a of ["ingest", "ingest_image", "ingest_url", "pdf_prepare", "delete", "clear_cache"])
+  check(`保護期涵蓋 ${a}`, !!guard && guard[1].includes(`"${a}"`));
+check("保護期檢查在 ingest 路由之前", src.indexOf("inReportFreeze() && body.force") < src.indexOf('if (action === "ingest") return'));
+const clr = src.match(/async function clearQaCache\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+check("清快取時重設預熱題目", /warm_queue[\s\S]*warmed_at: null/.test(clr));
+const admin = read("docs/admin.html");
+check("後台遇到保護期會確認後帶 force 重送", /report_freeze[\s\S]{0,120}force: true/.test(admin));
+
+// 10. 每晚健康檢查：不讀快取（真的測生成），結果寫進 nightly_checks，後台有顯示
+const nb = src.match(/async function nightlyCheck\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+check("每晚檢查存在", !!nb);
+check("每晚檢查不讀快取", /chat\([^)]*,\s*true\)/.test(nb));
+check("每晚檢查寫入 nightly_checks", /nightly_checks/.test(nb));
+check("快取 key 會被 noCache 關掉", /const cacheKey = !noCache/.test(src));
+const nq = (src.match(/const NIGHTLY = \[([\s\S]*?)\];/)?.[1].match(/\{ q:/g) ?? []).length;
+check("每晚只問 3 題（保護免費額度）", nq === 3);
+check("後台顯示每晚檢查", /nightlyList/.test(admin) && /d\.nightly/.test(admin));
+
+// 11. 回答附出處：前端來源標籤用 links 做成官方網址連結
+const common = read("docs/common.js");
+check("來源標籤連到官方網址", /function srcPill\(s, links[\s\S]{0,200}https:/.test(common));
+for (const f of ["docs/index.html", "docs/staff.html"]) check(`${f} 用 srcPill 顯示來源`, /srcPill\(s, (data\.)?links/.test(read(f)) || /srcPill\(/.test(read(f)));
+
 console.log(`${fails ? "✗" : "✓"} 單元測試：${passes} 項通過、${fails} 項失敗`);
 process.exit(fails ? 1 : 0);

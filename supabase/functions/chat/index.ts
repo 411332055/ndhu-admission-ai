@@ -401,7 +401,15 @@ async function saveQaCache(key: string, value: Record<string, unknown>) {
 async function clearQaCache() {
   semCache = null;
   try { await sb.from("app_cache").delete().like("key", "qa:%"); } catch {}
+  // 快取清掉後，報告預熱題目全部標成「待預熱」，預熱排程會自動再問一次
+  try { await sb.from("warm_queue").update({ warmed_at: null, cached: false }).not("id", "is", null); } catch {}
 }
+
+// 報告保護期：台灣時間 12/21 16:00 ～ 12/22 24:00。這段時間上傳資料會清掉預熱好的快取，
+// 所以後台上傳要多確認一次（force: true），避免報告前不小心讓答案變慢。
+const FREEZE_FROM = Date.parse("2026-12-21T08:00:00Z");
+const FREEZE_TO = Date.parse("2026-12-22T16:00:00Z");
+function inReportFreeze(now = Date.now()) { return now >= FREEZE_FROM && now < FREEZE_TO; }
 
 function cleanAnswer(raw: string) {
   let answer = raw.trim() || "抱歉，暫時無法產生回答，請稍後再試。";
@@ -533,6 +541,7 @@ async function chat(
   ip = "unknown",
   stream = false,
   image?: { mimeType?: string; data?: string } | null,
+  noCache = false,
 ) {
   const staff = role === "staff";
   let imgPart: { mimeType: string; data: string } | null = null;
@@ -553,7 +562,7 @@ async function chat(
   }
 
   const hist = Array.isArray(history) ? history : [];
-  const cacheKey = !staff && !imgPart && hist.length === 0 ? `qa:public:${normQ(question)}` : null;
+  const cacheKey = !noCache && !staff && !imgPart && hist.length === 0 ? `qa:public:${normQ(question)}` : null;
 
   // 多輪追問優化：問題較短時，帶入上一輪使用者提問的主題一起檢索（不增加任何 Gemini API 呼叫）
   const prevUser = [...hist].reverse().find((m) => m?.role === "user" && m?.content);
@@ -1072,12 +1081,13 @@ async function stats() {
 // 維運摘要：今天的 Gemini 用量、最近錯誤、正確率測試紀錄、缺口補齊速度、報告預熱進度
 async function opsSummary() {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
-  const [u, e, ev, rs, w] = await Promise.all([
+  const [u, e, ev, rs, w, nc] = await Promise.all([
     sb.from("usage_daily").select("day, kind, calls").gte("day", new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)).order("day", { ascending: false }),
     sb.from("error_logs").select("created_at, action, message").order("id", { ascending: false }).limit(20),
     sb.from("eval_runs").select("id, created_at, total, passed, partial").order("id", { ascending: false }).limit(10),
     sb.from("chat_logs").select("created_at, resolved_at").not("resolved_at", "is", null).order("resolved_at", { ascending: false }).limit(100),
     sb.from("warm_queue").select("ok, warmed_at"),
+    sb.from("nightly_checks").select("created_at, passed, total, details").order("id", { ascending: false }).limit(7),
   ]);
   const usageToday: Record<string, number> = {};
   for (const r of u.data ?? []) if (r.day === today) usageToday[r.kind] = r.calls;
@@ -1089,6 +1099,7 @@ async function opsSummary() {
     usageToday, usageWeek: u.data ?? [], usageLimits: { embed: 1000, generate: 1500 },
     errors: e.data ?? [], evalRuns: ev.data ?? [], avgResolveDays, resolvedCount: days.length,
     warm: { total: warmRows.length, ready: warmReady },
+    nightly: nc.data ?? [],
   };
 }
 
@@ -1308,6 +1319,34 @@ async function warmStep() {
   return json({ ok: res.ok, question: it.question, cached: !!body.cached });
 }
 
+// 每晚健康檢查：pg_cron 台灣時間每天 03:00 呼叫一次，問 3 個固定問題（不讀快取，真的走一遍檢索＋生成），
+// 檢查答案有沒有出現該有的關鍵字，結果存進 nightly_checks，後台「系統狀態」顯示最近 7 天。只用 3 次生成額度。
+const NIGHTLY = [
+  { q: "東華大學學雜費可以分期嗎？", expect: ["分期"] },
+  { q: "新生健康檢查報告要在什麼時候前繳交？", expect: ["9/30", "9月30", "九月三十"] },
+  { q: "衛生保健組的分機是多少？", expect: ["6253"] },
+];
+async function nightlyCheck() {
+  const results: any[] = [];
+  for (const it of NIGHTLY) {
+    const t0 = Date.now();
+    let ok = false, err: string | null = null, answer = "";
+    try {
+      const res = await chat(it.q, [], "test", "nightly", false, null, true);
+      const b = await res.json().catch(() => ({}));
+      answer = String(b.answer ?? "");
+      ok = res.ok && it.expect.some((k) => answer.includes(k));
+      if (!res.ok) err = String(b.error ?? res.status);
+      else if (!ok) err = "答案缺少關鍵字：" + it.expect.join("/");
+    } catch (e) { err = String((e as Error)?.message ?? e); }
+    results.push({ question: it.q, ok, ms: Date.now() - t0, error: err ? err.slice(0, 300) : null, answer: answer.slice(0, 300) });
+  }
+  const passed = results.filter((r) => r.ok).length;
+  await sb.from("nightly_checks").insert({ passed, total: results.length, details: results });
+  if (passed < results.length) await logError("nightly_check", `每晚檢查 ${passed}/${results.length} 通過`);
+  return json({ ok: true, passed, total: results.length });
+}
+
 // 備份用：匯出所有「公開」知識（不含向量與內部資料），給 GitHub Actions 每週存進 repo
 async function exportPublic() {
   const rows: any[] = [];
@@ -1367,6 +1406,7 @@ Deno.serve(async (req) => {
     if (action === "rechunk_step") return await rechunkStep();
     if (action === "warm_step") return await warmStep();
     if (action === "staged_step") return await stagedStep();
+    if (action === "nightly_check") return await nightlyCheck();
 
     // 行政人員（管理者也可以）
     if (["staff_login", "top_questions", "submit_note"].includes(action)) {
@@ -1378,6 +1418,8 @@ Deno.serve(async (req) => {
     }
 
     if (!isAdmin(body.admin_key)) return await rejectAuth("管理密碼錯誤");
+    if (["ingest", "ingest_image", "ingest_url", "pdf_prepare", "delete", "clear_cache"].includes(action) && inReportFreeze() && body.force !== true)
+      return json({ error: "現在是報告保護期（12/21 16:00～12/22），上傳或刪除會清掉預熱好的答案。確定要繼續嗎？", code: "report_freeze" }, 409);
     if (action === "ingest") return await ingest(body.source, body.text, !!body.append, body.audience, body.image_url);
     if (action === "ingest_image") return await ingestImage(body.source, body.mimeType, body.data, body.audience);
     if (action === "ingest_url") return await ingestUrl(body.url, body.source, body.audience);
