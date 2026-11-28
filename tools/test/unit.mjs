@@ -157,7 +157,7 @@ for (const f of ["docs/index.html", "docs/staff.html"]) check(`${f} 用 srcPill 
   if (qc) {
     const classify = new Function(qc + "\nreturn classifyQuestion;")();
     const cases = [["加退選什麼時候結束？", "選課"], ["宿舍可以自己選室友嗎", "宿舍"], ["學雜費可以分期嗎", "學費/助學"],
-      ["新生健檢要做什麼", "入學/報到"], ["英語畢業門檻是多少", "畢業/學位"], ["游泳池幾點開", "其他"], ["", "其他"]];
+      ["新生健檢要做什麼", "入學/報到"], ["英語畢業門檻是多少", "畢業/學位"], ["游泳池幾點開", "其他"], ["新生宿舍怎麼申請", "宿舍"], ["企管系畢業要修哪些學分", "畢業/學位"], ["畢業證書和身分證要什麼時候前上傳？", "入學/報到"], ["", "其他"]];
     for (const [q, want] of cases) check(`分類「${q || "(空白)"}」→ ${want}`, classify(q) === want);
   }
   check("後台有分類長條圖", /id="catChart"/.test(adm) && /renderCatChart\(\);/.test(adm));
