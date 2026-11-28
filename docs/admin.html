@@ -34,6 +34,8 @@
       <h2>📊 知識管理儀表板（KM 指標總覽）</h2>
       <div class="status">即時彙整知識庫規模、AI 回答完整率、使用者滿意度與 SECI 經驗外化成果（可直接截圖放進期末簡報）。</div>
       <div class="kpi-grid" id="kpiGrid"></div>
+      <h3 class="sub-h">學生最常問哪一類（最近 200 則提問，不含測試）</h3>
+      <div id="catChart" class="cat-chart"></div>
     </section>
 
     <section class="panel">
@@ -208,7 +210,7 @@ function renderSources() {
   $('srcList').innerHTML = list.length ? list.map(s => {
     const c = catMap[classifySource(s)] || catMap.other;
     const stale = isStale(s);
-    return `<tr><td><span class="cat-badge ${c.cls}">${c.label}</span>${esc(s.source)}${stale ? ` <span class="tag warn" title="${esc(stale)}">可能過期</span>` : ''}</td>
+    return `<tr${stale ? ' class="stale-row"' : ''}><td><span class="cat-badge ${c.cls}">${c.label}</span>${esc(s.source)}${stale ? ` <span class="tag warn" title="${esc(stale)}">可能過期</span>` : ''}</td>
      <td><button class="ghost aud-btn ${s.audience === 'staff' ? 'staff' : ''}" data-aud="${esc(s.source)}" data-cur="${s.audience}" title="點一下切換">${s.audience === 'staff' ? '🔒 內部' : '公開'}</button></td>
      <td>${s.chunks}</td><td>${fmt(s.updated)}</td>
      <td><button class="ghost" data-del="${esc(s.source)}">刪除</button></td></tr>`;
@@ -224,12 +226,13 @@ function renderSources() {
     await api({ action: 'delete', source: b.dataset.del }); loadSources();
   });
 }
-// 資料時效提醒：超過 180 天沒更新，或名稱寫了學年度但不是 115／116
+// 資料時效提醒：超過 60 天沒更新（整列標黃），或名稱寫了學年度但不是 115／116
+const STALE_DAYS = 60;
 function isStale(s) {
   const days = (Date.now() - Date.parse(s.updated)) / 86400000;
   const yr = s.source.match(/(1\d{2})\s*[-學]?\s*(學年度|學年|年|-\d)/);
   if (yr && +yr[1] < 115) return `名稱是 ${yr[1]} 學年度的資料`;
-  if (days > 180) return `已經 ${Math.round(days)} 天沒有更新`;
+  if (days > STALE_DAYS) return `已經 ${Math.round(days)} 天沒有更新`;
   return '';
 }
 let lastStatsData = null, lastNotesData = [];
@@ -315,6 +318,29 @@ function renderDashboard() {
       <span class="kpi-val">${approvedNotes} 則</span>
       <span class="kpi-sub">已入庫（待審核 ${pendingNotes} 則）</span>
     </div>`;
+  renderCatChart();
+}
+// 問題分類：用關鍵字規則把提問分成 6 類（知識管理：看出哪一類知識需求最大、該優先補）
+const Q_CATS = [
+  ['選課', /選課|加退選|學分|課程|必修|選修|停修|抵免|課表/],
+  ['宿舍', /宿舍|住宿|床位|室友|賃居|租屋/],
+  ['學費/助學', /學費|學雜費|繳費|分期|助學|獎學金|減免|就學貸款|弱勢|工讀/],
+  ['入學/報到', /報到|入學|新生|健檢|健康檢查|學生證|註冊|兵役|體檢|新生訓練/],
+  ['畢業/學位', /畢業|學位|英語畢業|門檻|雙主修|輔系|學程|轉系/],
+];
+function classifyQuestion(q) {
+  for (const [name, re] of Q_CATS) if (re.test(q || '')) return name;
+  return '其他';
+}
+function renderCatChart() {
+  const rows = (lastStatsData?.recent || []).filter(r => r.status !== 'blocked');
+  if (!rows.length) { $('catChart').innerHTML = '<div class="status">還沒有提問紀錄</div>'; return; }
+  const cnt = {};
+  for (const n of [...Q_CATS.map(c => c[0]), '其他']) cnt[n] = 0;
+  for (const r of rows) cnt[classifyQuestion(r.question)]++;
+  const max = Math.max(...Object.values(cnt), 1);
+  $('catChart').innerHTML = Object.entries(cnt).sort((a, b) => b[1] - a[1]).map(([n, v]) =>
+    `<div class="cat-row"><span class="cat-name">${n}</span><span class="cat-track"><span style="width:${Math.round(v * 100 / max)}%"></span></span><span class="cat-num">${v} 則（${Math.round(v * 100 / rows.length)}%）</span></div>`).join('');
 }
 async function loadSources() {
   const { sources } = await api({ action: 'list' });

@@ -147,5 +147,21 @@ const common = read("docs/common.js");
 check("來源標籤連到官方網址", /function srcPill\(s, links[\s\S]{0,200}https:/.test(common));
 for (const f of ["docs/index.html", "docs/staff.html"]) check(`${f} 用 srcPill 顯示來源`, /srcPill\(s, (data\.)?links/.test(read(f)) || /srcPill\(/.test(read(f)));
 
+// 12. 資料過期提醒（60 天標黃）與問題分類
+{
+  const adm = read("docs/admin.html");
+  check("過期門檻是 60 天", /const STALE_DAYS = 60;/.test(adm));
+  check("過期的整列標黃", /stale-row/.test(adm) && /tr\.stale-row td/.test(read("docs/style.css")));
+  const qc = adm.match(/const Q_CATS = \[[\s\S]*?\];\nfunction classifyQuestion\(q\) \{[\s\S]*?\n\}/)?.[0];
+  check("問題分類函式存在", !!qc);
+  if (qc) {
+    const classify = new Function(qc + "\nreturn classifyQuestion;")();
+    const cases = [["加退選什麼時候結束？", "選課"], ["宿舍可以自己選室友嗎", "宿舍"], ["學雜費可以分期嗎", "學費/助學"],
+      ["新生健檢要做什麼", "入學/報到"], ["英語畢業門檻是多少", "畢業/學位"], ["游泳池幾點開", "其他"], ["", "其他"]];
+    for (const [q, want] of cases) check(`分類「${q || "(空白)"}」→ ${want}`, classify(q) === want);
+  }
+  check("後台有分類長條圖", /id="catChart"/.test(adm) && /renderCatChart\(\);/.test(adm));
+}
+
 console.log(`${fails ? "✗" : "✓"} 單元測試：${passes} 項通過、${fails} 項失敗`);
 process.exit(fails ? 1 : 0);

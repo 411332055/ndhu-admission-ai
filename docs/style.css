@@ -1405,3 +1405,13 @@ button.primary.stop-btn {
   white-space: nowrap;
 }
 .chk-ask:hover { background: var(--green); color: #fff; border-color: var(--green); }
+
+/* 資料過期：整列標黃 */
+tr.stale-row td { background: #f9eeda; }
+html[data-theme="dark"] tr.stale-row td { background: rgba(249, 238, 218, .12); }
+/* 問題分類長條圖 */
+.cat-chart { display: grid; gap: 6px; margin-top: 6px; }
+.cat-row { display: grid; grid-template-columns: 5.5em 1fr 7em; align-items: center; gap: 8px; font-size: .85rem; }
+.cat-track { height: 14px; background: var(--green-soft); border-radius: 999px; overflow: hidden; }
+.cat-track > span { display: block; height: 100%; background: linear-gradient(90deg, var(--green-light), var(--gold)); border-radius: 999px; }
+.cat-num { color: var(--muted); text-align: right; }
